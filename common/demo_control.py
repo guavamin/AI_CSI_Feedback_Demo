@@ -70,6 +70,7 @@ class DemoView:
     events: list[Event]
     csi_record_root: str
     last: Sample | None = None
+    session_t0: float | None = None  # Sample.t of the session's first sample: time 0 of the plots
     decoder: int = -1
     aifb: dict[str, str] = field(default_factory=dict)
 
@@ -110,6 +111,7 @@ class DemoController:
         self._switch_lock = threading.Lock()
         self._switching = False
         self._samples: deque[Sample] = deque(maxlen=3600)
+        self._session_t0: float | None = None
         self._events: deque[Event] = deque(maxlen=300)
         self._stats = MacStatsIngest(Path(cfg.oai.build_dir).expanduser() / cfg.oai.stats_log)
         self._stop = threading.Event()
@@ -136,6 +138,7 @@ class DemoController:
     def start_system(self) -> None:
         with self._lock:
             self._samples.clear()  # a new session: plots and CDFs start empty
+            self._session_t0 = None
         self._mark(self.scenario)  # the modems boot in this scenario (decoder 0)
         self.event("busy", "Starting gNB, UE and traffic")
         threading.Thread(target=self._start_worker, name="demo-start", daemon=True).start()
@@ -308,6 +311,8 @@ class DemoController:
             if scen is None:
                 continue  # switching, or the stats still describe the previous scenario
             with self._lock:
+                if self._session_t0 is None:
+                    self._session_t0 = time.monotonic() - self._t0
                 self._samples.append(Sample(
                     t=time.monotonic() - self._t0, scenario=scen, tput_mbps=s.throughput_mbps, bler=s.bler,
                     mcs=st.dl_mcs if st else float("nan"), cqi=float(s.cqi),
@@ -325,7 +330,8 @@ class DemoController:
             return DemoView(radio=radio, scenario=self.scenario, target_scenario=self.target,
                             switching=self._switching, steps=bringup_steps(radio), samples=samples,
                             events=list(self._events), csi_record_root=str(self.ctrl.csirs_record_root or ""),
-                            last=samples[-1] if samples else None, decoder=self.decoder, aifb=dict(self._aifb))
+                            last=samples[-1] if samples else None, decoder=self.decoder, aifb=dict(self._aifb),
+                            session_t0=self._session_t0)
 
 
 def _title(key: str) -> str:

@@ -454,7 +454,9 @@ class App:
     def refresh_plots(self, view: DemoView):
         if not view.samples:
             return
-        t_first = view.samples[0].t  # the session's first sample: the time axis starts at 0 there
+        # time 0 = the session's first sample, fixed for the whole session (the sample buffer keeps only the
+        # last hour, so its oldest sample is not a stable origin); the axis then slides over the last WINDOW_S
+        t_first = view.session_t0 if view.session_t0 is not None else view.samples[0].t
         t_end = view.samples[-1].t - t_first
         win = [s for s in view.samples if s.t - t_first >= t_end - WINDOW_S]
         t = np.array([s.t - t_first for s in win])
