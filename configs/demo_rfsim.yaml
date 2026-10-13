@@ -1,0 +1,101 @@
+# Same laptop, RF simulator (development; no radios). Default RF-sim channel: flat, noiseless.
+extends: same_laptop_base.yaml
+profile: demo_rfsim
+
+oai:
+  rfsim: true
+  gnb:
+    base_args:
+      - "--log_config.global_log_options"
+      - "utc_time"
+      - "-E"
+      - "--telnetsrv"
+      - "--telnetsrv.listenport"
+      - "9093"
+      - "--ai-fb-live-mode-switch"
+      - "1"
+      - "--ai-fb-live-alt-model-path"
+      - ${GNB_DECODER_CROSS}
+      - "--ai-fb-force-rank1"
+      - "1"
+      - "--print-csi-debug"
+      - "0"
+      - "--ai-fb-impl-mode"
+      - "13"
+      - "--ai-fb-model-backend"
+      - "0"
+      - "--ai-fb-model-path"
+      - ${GNB_DECODER_SAME}
+      - "--ai-fb-transformer-domain"
+      - "frequency"
+      - "--ai-fb-transformer-grid"
+      - "768"
+      - "--ai-fb-transformer-subband-average"
+      - "1"
+      - "--ai-fb-pucch-append-noise"
+      - "0"
+      - "--ai-fb-precoder-mode"
+      - "subband"
+      - "--ai-fb-precoder-prg-size"
+      - "4"
+      - "--rfsim"
+      - "--rfsimulator.[0].serveraddr"
+      - "server"
+  ue:
+    base_args:
+      - "-C"
+      - "3609120000"
+      - "-r"
+      - "51"
+      - "--numerology"
+      - "1"
+      - "--ssb"
+      - "234"
+      - "--ue-fo-compensation"
+      - "-E"
+      - "--uicc0.imsi"
+      - ${IMSI}
+      - "--log_config.global_log_options"
+      - "utc_time"
+      - "--ue-nb-ant-rx"
+      - "2"
+      - "--ue-nb-ant-tx"
+      - "2"
+      - "--telnetsrv"
+      - "--telnetsrv.listenport"
+      - "9091"
+      - "--telnetsrv.shrmod"
+      - "ciUE"
+      - "--ai-fb-live-mode-switch"
+      - "1"
+      - "--ai-fb-force-rank1"
+      - "1"
+      - "--print-csi-debug"
+      - "0"
+      - "--ai-fb-impl-mode"
+      - "13"
+      - "--ai-fb-model-backend"
+      - "0"
+      - "--ai-fb-model-path"
+      - ${UE_MODEL}
+      - "--ai-fb-transformer-domain"
+      - "frequency"
+      - "--ai-fb-transformer-grid"
+      - "768"
+      - "--ai-fb-transformer-subband-average"
+      - "1"
+      - "--ai-fb-pucch-append-noise"
+      - "0"
+      - "--ai-fb-precoder-mode"
+      - "subband"
+      - "--ai-fb-precoder-prg-size"
+      - "4"
+      - "--rfsim"
+      - "--band"   # as in every earlier RF-sim run
+      - "78"
+
+iperf:
+  client:
+    use_sudo: false
+    argv: ["docker", "exec", "oai-ext-dn", "iperf", "-u", "-t", "86400", "-i", "1", "-fk",
+           "-B", "192.168.70.135", "-b", "100M", "-c", "{ue_ip}"]

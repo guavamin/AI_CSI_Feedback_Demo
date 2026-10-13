@@ -1,0 +1,67 @@
+# Same laptop, over the air: two USRP B210 on this laptop, both locked to the external 10 MHz / PPS reference.
+# Radio arguments mirror the OTA pipeline (OTA_Experiment_20260922 run commands): gNB conf with
+# sdr_addrs serial=31F3CC3 and external clock/time; the UE takes the other B210.
+extends: same_laptop_base.yaml
+profile: demo_usrp
+
+oai:
+  rfsim: false
+  gnb_boot_s: 8.0
+  mode_settle_s: 3.0
+  ue:
+    base_args:
+      - "-C"
+      - "3609120000"
+      - "-r"
+      - "51"
+      - "--numerology"
+      - "1"
+      - "--ssb"
+      - "234"
+      - "--ue-fo-compensation"
+      - "-E"
+      - "--uicc0.imsi"
+      - ${IMSI}
+      - "--log_config.global_log_options"
+      - "utc_time"
+      - "--if_freq"
+      - "2500000000"
+      - "--ue-nb-ant-rx"
+      - "2"
+      - "--ue-nb-ant-tx"
+      - "2"
+      - "--clock-source"
+      - "1"
+      - "--time-source"
+      - "1"
+      - "--ue-rxgain"
+      - "106"
+      - "--telnetsrv"
+      - "--telnetsrv.listenport"
+      - "9091"
+      - "--telnetsrv.shrmod"
+      - "ciUE"
+      - "--ai-fb-live-mode-switch"
+      - "1"
+      - "--ai-fb-force-rank1"
+      - "1"
+      - "--print-csi-debug"
+      - "0"
+      - "--ai-fb-impl-mode"
+      - "13"
+      - "--ai-fb-model-backend"
+      - "0"
+      - "--ai-fb-model-path"
+      - ${UE_MODEL}
+      - "--ai-fb-transformer-domain"
+      - "frequency"
+      - "--ai-fb-transformer-grid"
+      - "768"
+      - "--ai-fb-transformer-subband-average"
+      - "1"
+      - "--ai-fb-pucch-append-noise"
+      - "0"
+      - "--ai-fb-precoder-mode"
+      - "subband"
+      - "--ai-fb-precoder-prg-size"
+      - "4"

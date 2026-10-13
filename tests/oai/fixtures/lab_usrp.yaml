@@ -1,0 +1,99 @@
+# Lab USRP — same-PC gNB + UE over real B210 radios (no RFsim).
+# Extends lab_rfsim.yaml; only RF / bring-up args differ.
+#
+# Prerequisites (beyond lab_rfsim):
+#   - OAI built WITH USRP: build_dir must contain liboai_device.so
+#       cd .../Demo-gui/OAI_CSINET/cmake_targets && ./build_oai -w USRP --gNB --nrUE -c
+#   - Two USRPs on this PC. Check: uhd_find_devices
+#   - gNB RU sdr_addrs in OAI conf = gNB radio; UE --usrp-args = other radio
+#   - Core network up; IF cabling / mixers match if_freq (2.5 GHz) in conf
+#   - Keep att_tx / att_rx / antennas safe
+#
+# B210 notes (from lab logs):
+#   - Full-rate 30.72 Msps @ 2x2 overflows USB → UE asserts readBlockSize
+#     (ERROR_CODE_OVERFLOW). Use -E on BOTH gNB and UE → 23.04 Msps.
+#   - Both USRPs use external 10 MHz ref (+ PPS): --clock-source 1 / --time-source 1
+#     (and gNB conf clock_src/time_src = external). Requires OctoClock/GPSDO/shared ref.
+#
+# This host:
+#   gNB: serial=31A52D7  (gnb.sa.band78.51prb.usrpb200.conf)
+#   UE:  serial=31F3CC3  (--usrp-args below)
+#
+# Run:
+#   pyoaicsinet run -c configs/lab_usrp.yaml
+# Then: Start gNB → wait for UHD → Start UE.
+
+extends: lab_rfsim.yaml
+
+profile: lab_usrp
+
+oai:
+  rfsim: false
+  gnb_boot_s: 8.0
+  mode_settle_s: 3.0
+
+  gnb:
+    # No --rfsim. -E must match UE (B210 USB budget).
+    base_args:
+      - "--log_config.global_log_options"
+      - "utc_time"
+      - "--ai-fb-force-rank1"
+      - "1"
+      - "--print-csi-debug"
+      - "0"
+      - "--telnetsrv"
+      - "--telnetsrv.listenport"
+      - "9093"
+      - "--ai-fb-live-mode-switch"
+      - "1"
+      - "-E"
+      - "--continuous-tx"
+      # External 10 MHz (+ PPS): 0=internal, 1=external, 2=gpsdo
+      - "--clock-source"
+      - "1"
+      - "--time-source"
+      - "1"
+
+  ue:
+    # Match gNB: -E → 23.04 Msps. IF = gNB RUs.if_freq (2.5 GHz).
+    base_args:
+      - "-C"
+      - "3609120000"
+      - "-r"
+      - "51"
+      - "--numerology"
+      - "1"
+      - "--band"
+      - "78"
+      - "--ssb"
+      - "234"
+      - "--ue-fo-compensation"
+      - "-E"
+      - "--uicc0.imsi"
+      - "001010000000001"
+      - "--log_config.global_log_options"
+      - "utc_time"
+      - "--if_freq"
+      - "2500000000"
+      - "--ue-nb-ant-rx"
+      - "2"
+      - "--ue-nb-ant-tx"
+      - "2"
+      - "--usrp-args"
+      - "serial=31F3CC3"
+      - "--clock-source"
+      - "1"
+      - "--time-source"
+      - "1"
+      - "--continuous-tx"
+      - "--telnetsrv"
+      - "--telnetsrv.listenport"
+      - "9091"
+      - "--telnetsrv.shrmod"
+      - "ciUE"
+      - "--ai-fb-live-mode-switch"
+      - "1"
+      - "--print-csi-debug"
+      - "0"
+      - "--ai-fb-force-rank1"
+      - "1"

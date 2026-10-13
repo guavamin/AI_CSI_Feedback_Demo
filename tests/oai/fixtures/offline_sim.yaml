@@ -1,0 +1,71 @@
+# Offline GUI — no OAI hardware. Use this to verify install + DearPyGui.
+
+profile: offline_sim
+
+features:
+  simulate_metrics: true
+  softmodem_control: false
+  live_mode_telnet: false
+  record_run: true
+  simulate_csirs: true
+  # false = start gNB/UE from Modem control; true = auto-start on launch
+  auto_start_modems: false
+
+network:
+  gnb_host: "127.0.0.1"
+  ue_host: "127.0.0.1"
+  gnb_telnet_port: 9090
+  ue_telnet_port: 9091
+  metrics_port: 9100
+
+oai:
+  build_dir: ""
+  gnb_conf: ""
+  ue_conf: ""
+  rfsim: true
+
+csi:
+  default_mode: "legacy"   # legacy | csinet
+  csi_period_s: 0.04
+  n_rx: 1
+  n_ports: 2
+  n_subc: 128
+
+plot:
+  bler_ylim: [0.0, 1.0]
+  tput_ylim: [0.0, 50.0]
+  max_points: 256
+  avg_window: 12
+  csirs_mag_ylim: [0.0, 1.5]
+  dist_max_samples: 5000
+  dist_cdf_points: 64
+  dist_avg_max_points: 512
+  # Distribution CDF x-axis limits (independent of real-time *ylim)
+  dist_bler_xlim: [0.0, 1.0]
+  dist_tput_xlim: [0.0, 50.0]
+  dist_cqi_xlim: [0.0, 15.0]
+  cqi_ylim: [0.0, 15.0]
+  ri_ylim: [0.0, 4.0]
+  # PMI dual-axis limits
+  pmi_x1_ylim: [-1.0, 1.0]
+  pmi_x2_ylim: [-1.0, 4.0]
+
+logging:
+  root_dir: "data"
+
+devices:
+  font_path: "/usr/share/fonts/truetype/roboto/unhinted/RobotoTTF/Roboto-Regular.ttf"
+
+gui:
+  display: ""
+  auto_detect_display: true
+  auto_xhost: true
+  xhost_user: ""
+  csirs_view_enabled: false
+  font_size: 26
+  wi_lab_url: "https://www.wi-lab.net/"
+  legacy_mode_image: "images/legacy.png"
+  csinet_mode_image: "images/ai_model.png"
+  # true = Legacy cyan / AI amber for tabs, buttons, Traffic, radio+checkbox marks
+  # false = InterDigital logo cyan (#00AAEE) in both modes
+  mode_based_colors: true

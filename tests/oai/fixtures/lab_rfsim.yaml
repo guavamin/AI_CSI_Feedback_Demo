@@ -1,0 +1,242 @@
+# Lab RFsim — real nr-softmodem / nr-uesoftmodem control + nrMAC_stats metrics.
+# CSI mode toggle uses live telnet (aifb pucch_replace) when softmodems are up;
+# set mode_switch_relaunch: true to fall back to stop/restart.
+#
+# Prerequisites:
+#   - Binaries built under oai.build_dir with --build-lib telnetsrv
+#   - Passwordless sudo for softmodems, e.g.:
+#       %sudo ALL=(root) NOPASSWD: /path/to/nr-softmodem, /path/to/nr-uesoftmodem
+#   - Or run the GUI as root
+#   - Edit model paths / conf if your lab layout differs
+#
+# RFsim notes:
+#   - Do NOT pass UE -E (¾ sampling). gNB uses 30.72 Msps; -E forces 23.04 Msps
+#     and SSB sync fails forever even though the RFsim TCP link is up.
+#   - Do NOT pass --if_freq for RFsim (that is for USRP IF chains).
+#   - gNB prints the matching UE cmdline after boot; keep -C/-r/--ssb/--band in sync.
+#
+# Run:
+#   pyoaicsinet run -c configs/lab_rfsim.yaml
+
+extends: offline_sim.yaml
+
+profile: lab_rfsim
+
+features:
+  simulate_metrics: false
+  softmodem_control: true
+  live_mode_telnet: true
+  mode_switch_relaunch: false
+  record_run: true
+  simulate_csirs: false
+  auto_start_modems: false
+  iperf_control: true
+
+network:
+  gnb_host: "127.0.0.1"
+  ue_host: "127.0.0.1"
+  # Avoid 9090 — Open5GS often binds 127.0.0.x:9090 on this lab host
+  gnb_telnet_port: 9093
+  ue_telnet_port: 9091
+  metrics_port: 9100
+  # Split-PC CSI-RS: GUI listens here; on UE host run:
+  #   pyoaicsinet csirs-forward -r <UE --csi-record-path> -d <gui_ip>:9101
+  csirs_udp_bind: "0.0.0.0"
+  csirs_udp_port: 9101
+
+# DN → UE UDP load (classic iperf). No docker -it (non-interactive).
+# {ue_ip} is filled from oaitun_ue1 after UE attach (e.g. 10.0.0.19).
+iperf:
+  client_delay_s: 1.0
+  ue_iface: "oaitun_ue1"
+  ue_ip_token: "{ue_ip}"
+  # Start traffic = desired-on: wait for UE attach / TUN IP, restart UE if needed
+  ue_boot_s: 20.0
+  # 0 = do NOT restart UE just because TUN IP is late (radio Attached ≠ PDU IP)
+  ip_wait_s: 0.0
+  supervise_period_s: 1.0
+  ue_restart_cooldown_s: 2.0
+  # Optional brief settle after live PDU IP (0 = go straight to ping)
+  ip_settle_s: 0.0
+  # Ping UE IP for this long to verify the link before iperf (DN container preferred)
+  ip_ping_s: 3.0
+  ip_ping_dn_container: "oai-ext-dn"
+  # Debounce after IP disappears before PDU-retry waits start
+  ip_lost_grace_s: 2.0
+  # After PDU was up / iperf initiated: wait this long per attempt for PDU to return
+  pdu_retry_wait_s: 5.0
+  # Failed PDU waits (or iperf starts) before UE re-init
+  pdu_retry_max: 3
+  # Stage-aware UE bring-up from UE softmodem log (SSB→RACH→RRC→PDU→TUN)
+  bringup_monitor: true
+  bringup_ssb_timeout_s: 15.0
+  bringup_rach_timeout_s: 20.0
+  bringup_rrc_timeout_s: 15.0
+  bringup_pdu_timeout_s: 60.0
+  bringup_tun_timeout_s: 20.0
+  server:
+    use_sudo: false
+    argv: ["iperf", "-s", "-u", "-i", "1", "-B", "{ue_ip}"]
+  client:
+    use_sudo: false
+    argv:
+      - "docker"
+      - "exec"
+      - "oai-ext-dn"
+      - "iperf"
+      - "-u"
+      - "-t"
+      - "86400"
+      - "-i"
+      - "1"
+      - "-fk"
+      - "-B"
+      - "192.168.70.135"
+      - "-b"
+      - "100M"
+      - "-c"
+      - "{ue_ip}"
+
+oai:
+  # Demo-gui OAI stack (was Test_Project/OAI_CSINET)
+  build_dir: "/root/Tawfik/OAI-Projects/Demo-gui/OAI_CSINET/cmake_targets/ran_build/build"
+  use_sudo: true
+  stats_log: "nrMAC_stats.log"
+  stop_timeout_s: 10.0
+  gnb_boot_s: 5.0
+  mode_settle_s: 2.0
+  rfsim: true
+  # UE writes H_*.bin; GUI ingests via UDP (same-PC auto-forwards to 127.0.0.1).
+  csi_record: true
+  csi_record_keep_h: 2
+  # file | udp | both — same-PC lab uses udp (local forwarder → GUI listener)
+  csi_transport: udp
+  # Where csirs-forward sends (GUI host). Same PC → loopback.
+  csi_udp_dest_host: "127.0.0.1"
+
+  gnb:
+    binary: "nr-softmodem"
+    conf: "../../../targets/PROJECTS/GENERIC-NR-5GC/myconfig/gnb.sa.band78.51prb.usrpb200.conf"
+    # RefineNet modes 5–11 require AFBM V4 (repo-root ai_fb_model_refinenet.bin is V3 and fails to load)
+    model_path: "/root/Tawfik/OAI-Projects/Demo-gui/OAI_CSINET/results/mode9_ri1_v4_final/ai_fb_model_refinenet.bin"
+    base_args:
+      - "--log_config.global_log_options"
+      - "utc_time"
+      # Demo-gui AI-FB path is rank-1 only
+      - "--ai-fb-force-rank1"
+      - "1"
+      - "--print-csi-debug"
+      - "0"
+      - "--telnetsrv"
+      - "--telnetsrv.listenport"
+      - "9093"
+      - "--ai-fb-live-mode-switch"
+      - "1"
+      - "--rfsim"
+      - "--rfsimulator.[0].serveraddr"
+      - "server"
+    # GUI "csinet" = AI-FB PUCCH replace (refinenet mode 5)
+    # GUI "legacy" = PUCCH replace off (Type-I CSI)
+    mode_args:
+      legacy:
+        - "--ai-fb-impl-mode"
+        - "5"
+        - "--ai-fb-pucch-replace"
+        - "0"
+      csinet:
+        - "--ai-fb-impl-mode"
+        - "5"
+        - "--ai-fb-pucch-replace"
+        - "1"
+
+  ue:
+    binary: "nr-uesoftmodem"
+    conf: "../../../targets/PROJECTS/GENERIC-NR-5GC/myconfig/ue.conf"
+    model_path: "/root/Tawfik/OAI-Projects/Demo-gui/OAI_CSINET/results/mode9_ri1_v4_final/ai_fb_model_refinenet.bin"
+    # Matches gNB-recommended UE cmdline for this cell (no -E, no --if_freq)
+    base_args:
+      - "-C"
+      - "3609120000"
+      - "-r"
+      - "51"
+      - "--numerology"
+      - "1"
+      - "--band"
+      - "78"
+      - "--ssb"
+      - "234"
+      - "--ue-fo-compensation"
+      - "--uicc0.imsi"
+      - "001010000000001"
+      - "--log_config.global_log_options"
+      - "utc_time"
+      - "--ue-nb-ant-rx"
+      - "2"
+      - "--ue-nb-ant-tx"
+      - "2"
+      - "--print-csi-debug"
+      - "0"
+      - "--telnetsrv"
+      - "--telnetsrv.listenport"
+      - "9091"
+      - "--telnetsrv.shrmod"
+      - "ciUE"
+      - "--ai-fb-live-mode-switch"
+      - "1"
+      - "--rfsim"
+      # Match gNB: Demo-gui AI-FB path is rank-1 only
+      - "--ai-fb-force-rank1"
+      - "1"
+    mode_args:
+      legacy:
+        - "--ai-fb-impl-mode"
+        - "6"
+        - "--ai-fb-pucch-replace"
+        - "0"
+      csinet:
+        - "--ai-fb-impl-mode"
+        - "6"
+        - "--ai-fb-pucch-replace"
+        - "1"
+
+csi:
+  default_mode: "legacy"
+  # GUI poll; keep ≤ gNB nrMAC_stats period (100 ms) — 50 ms oversamples the same file safely
+  csi_period_s: 0.05
+  n_rx: 2
+  n_ports: 2
+  n_subc: 128
+
+plot:
+  bler_ylim: [0.0, 0.5]
+  tput_ylim: [0.0, 100.0]
+  cqi_ylim: [0.0, 20.0]
+  # Realtime history: ~30 s at 20 Hz poll (csi_period_s: 0.05)
+  max_points: 600
+  # Trailing avg for thick traces / titles (~0.5 s at 20 Hz)
+  avg_window: 10
+  # Auto-fit BLER/tput realtime Y + CDF X from samples (ylim/xlim = fallback)
+  auto_scale_bler_tput: true
+  auto_scale_every_n: 8
+  axis_headroom: 0.20
+  # Distribution CDF x-axis (override independently of real-time *ylim)
+  dist_bler_xlim: [0.0, 0.45]
+  dist_tput_xlim: [0.0, 45.0]
+  dist_cqi_xlim: [0.0, 20.0]
+  ri_ylim: [0.0, 8.0]
+  pmi_x1_ylim: [-1.0, 1.0]
+  pmi_x2_ylim: [-1.0, 4.0]
+  # |H| is peak-normalized per H_*.bin sample (strongest tone = 1.0)
+  csirs_mag_ylim: [0.0, 1.2]
+  # native = OAI FFT bins 0..N−1 (unshifted). signed = −N/2..N/2−1 with DC at 0.
+  csirs_freq_axis: signed
+  csirs_show_markers: true
+  csirs_filter_margin: 32
+
+gui:
+  # Overview illustrations (Legacy / AI mode panels)
+  legacy_mode_image: "images/legacy.png"
+  csinet_mode_image: "images/ai_model.png"
+  # true = tabs/buttons/Traffic/radio+checkbox marks follow CSI mode (Legacy cyan / AI amber)
+  # false = InterDigital logo cyan (#00AAEE) for both modes
+  mode_based_colors: true

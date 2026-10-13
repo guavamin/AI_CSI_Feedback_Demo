@@ -1,0 +1,9 @@
+[project]
+name = "ai-csi-feedback-demo"
+version = "0.1.0"
+description = "Demo GUIs for the OAI live CSI feedback prototype (legacy / AI same vendor / AI cross vendor)"
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

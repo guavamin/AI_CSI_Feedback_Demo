@@ -1,0 +1,188 @@
+# Same-laptop demo: gNB, UE, OAI CN5G and GUI on this laptop. Shared by demo_rfsim.yaml and demo_usrp.yaml.
+#
+# OAI: the openairinterface5g_gui worktree (branch gui-live-switch, build ran_build_gui with ENABLE_TELNETSRV):
+#   - scheduled Legacy <-> AI switch on gNB and UE   (telnet "aifb schedule 0|1 <frame>")
+#   - live gNB decoder swap, Same <-> Cross vendor   (telnet "aifb decoder 0|1 <frame>")
+# Both modems boot once in Transformer mode 13 with model set B; nothing restarts when the scenario changes.
+#   UE  : model 1 (vendor 1) encoder
+#   gNB : decoder 0 = model 1 (same vendor), decoder 1 = vendor-2 decoder for a vendor-1 source (cross vendor)
+#
+# Paths: ${NAME} comes from the environment if set, otherwise from vars: below (${REPO} = this repository).
+# Prerequisites: OAI CN5G up (docker), passwordless sudo for the two ran_build_gui binaries
+# (/etc/sudoers.d/pyoaicsinet). Never run this while the OTA pipeline is running.
+
+vars:
+  OAI_DIR: ${REPO}/../openairinterface5g_gui
+  OAI_BUILD: ${OAI_DIR}/cmake_targets/ran_build_gui/build
+  OAI_CONF: ${OAI_DIR}/targets/PROJECTS/GENERIC-NR-5GC/myconfig
+  MODELS: ${OAI_DIR}/models/ai_fb_transformer/capture_20260922_B_topology_from_start
+  UE_MODEL: ${MODELS}/model1_packed_p16.bin
+  GNB_DECODER_SAME: ${MODELS}/model1_packed_p16.bin
+  GNB_DECODER_CROSS: ${MODELS}/model2_decoder_for_model1_source.bin
+  IMSI: "001010000000001"
+
+profile: same_laptop
+
+features:
+  simulate_metrics: false
+  softmodem_control: true
+  live_mode_telnet: true
+  mode_switch_relaunch: false
+  live_mode_lead_frames: 15     # scheduled switch 150 ms after the click (both sides on one laptop)
+  record_run: true
+  simulate_csirs: false
+  auto_start_modems: false
+  iperf_control: true
+
+network:
+  gnb_host: "127.0.0.1"
+  ue_host: "127.0.0.1"
+  gnb_telnet_port: 9093
+  ue_telnet_port: 9091
+  metrics_port: 9100
+  csirs_udp_bind: "127.0.0.1"
+  csirs_udp_port: 9101
+
+iperf:
+  client_delay_s: 1.0
+  ue_iface: "oaitun_ue1"
+  ue_ip_token: "{ue_ip}"
+  ue_boot_s: 20.0
+  ip_wait_s: 0.0
+  supervise_period_s: 1.0
+  ue_restart_cooldown_s: 2.0
+  ip_settle_s: 0.0
+  ip_ping_s: 3.0
+  ip_ping_dn_container: "oai-ext-dn"
+  ip_lost_grace_s: 2.0
+  pdu_retry_wait_s: 5.0
+  pdu_retry_max: 3
+  bringup_monitor: true
+  bringup_ssb_timeout_s: 15.0
+  bringup_rach_timeout_s: 20.0
+  bringup_rrc_timeout_s: 15.0
+  bringup_pdu_timeout_s: 60.0
+  bringup_tun_timeout_s: 20.0
+  server:
+    use_sudo: false
+    argv: ["iperf", "-s", "-u", "-i", "1", "-B", "{ue_ip}"]
+  client:
+    use_sudo: false
+    argv: ["docker", "exec", "oai-ext-dn", "iperf", "-u", "-t", "86400", "-i", "1", "-fk",
+           "-B", "192.168.70.135", "-b", "30M", "-c", "{ue_ip}"]
+
+oai:
+  build_dir: ${OAI_BUILD}
+  use_sudo: true
+  stats_log: "nrMAC_stats.log"
+  stop_timeout_s: 10.0
+  gnb_boot_s: 5.0
+  mode_settle_s: 2.0
+  csi_record: true          # UE writes H_*.bin: ground truth for the channel view and the replay
+  csi_record_keep_h: 4
+  csi_transport: file
+  gnb:
+    binary: "nr-softmodem"
+    conf: ${OAI_CONF}/gnb.sa.band78.51prb.usrpb200.conf
+    model_path: ""
+    base_args:
+      - "--log_config.global_log_options"
+      - "utc_time"
+      - "-E"
+      - "--telnetsrv"
+      - "--telnetsrv.listenport"
+      - "9093"
+      - "--ai-fb-live-mode-switch"
+      - "1"
+      - "--ai-fb-live-alt-model-path"
+      - ${GNB_DECODER_CROSS}
+      - "--ai-fb-force-rank1"
+      - "1"
+      - "--print-csi-debug"
+      - "0"
+      - "--ai-fb-impl-mode"
+      - "13"
+      - "--ai-fb-model-backend"
+      - "0"
+      - "--ai-fb-model-path"
+      - ${GNB_DECODER_SAME}
+      - "--ai-fb-transformer-domain"
+      - "frequency"
+      - "--ai-fb-transformer-grid"
+      - "768"
+      - "--ai-fb-transformer-subband-average"
+      - "1"
+      - "--ai-fb-pucch-append-noise"
+      - "0"
+      - "--ai-fb-precoder-mode"
+      - "subband"
+      - "--ai-fb-precoder-prg-size"
+      - "4"
+    mode_args:
+      legacy: ["--ai-fb-pucch-replace", "0"]
+      csinet: ["--ai-fb-pucch-replace", "1"]
+  ue:
+    binary: "nr-uesoftmodem"
+    conf: ${OAI_CONF}/ue.conf
+    model_path: ""
+    base_args:
+      - "-C"
+      - "3609120000"
+      - "-r"
+      - "51"
+      - "--numerology"
+      - "1"
+      - "--ssb"
+      - "234"
+      - "--ue-fo-compensation"
+      - "-E"
+      - "--uicc0.imsi"
+      - ${IMSI}
+      - "--log_config.global_log_options"
+      - "utc_time"
+      - "--ue-nb-ant-rx"
+      - "2"
+      - "--ue-nb-ant-tx"
+      - "2"
+      - "--telnetsrv"
+      - "--telnetsrv.listenport"
+      - "9091"
+      - "--telnetsrv.shrmod"
+      - "ciUE"
+      - "--ai-fb-live-mode-switch"
+      - "1"
+      - "--ai-fb-force-rank1"
+      - "1"
+      - "--print-csi-debug"
+      - "0"
+      - "--ai-fb-impl-mode"
+      - "13"
+      - "--ai-fb-model-backend"
+      - "0"
+      - "--ai-fb-model-path"
+      - ${UE_MODEL}
+      - "--ai-fb-transformer-domain"
+      - "frequency"
+      - "--ai-fb-transformer-grid"
+      - "768"
+      - "--ai-fb-transformer-subband-average"
+      - "1"
+      - "--ai-fb-pucch-append-noise"
+      - "0"
+      - "--ai-fb-precoder-mode"
+      - "subband"
+      - "--ai-fb-precoder-prg-size"
+      - "4"
+    mode_args:
+      legacy: ["--ai-fb-pucch-replace", "0"]
+      csinet: ["--ai-fb-pucch-replace", "1"]
+
+csi:
+  default_mode: "legacy"
+  csi_period_s: 0.05
+  n_rx: 2
+  n_ports: 2
+  n_subc: 128
+
+logging:
+  root_dir: ${REPO}/data/runs
