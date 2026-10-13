@@ -14,6 +14,7 @@ samples, event log). All OAI work runs on background threads.
 
 from __future__ import annotations
 
+import bisect
 import logging
 import threading
 import time
@@ -34,6 +35,7 @@ DECODER = {"same": 0, "cross": 1}
 STEPS = ("gNB", "USRPs", "UE sync", "Attach", "IP", "Traffic")
 _UE_SYNCED = {"waiting_rach", "waiting_rrc", "waiting_pdu", "waiting_tun", "ready"}
 _UE_ATTACHED = {"waiting_pdu", "waiting_tun", "ready"}
+SETTLE_S = 2.0  # after a switch the gNB's smoothed BLER / MCS still describe the previous scenario
 
 
 @dataclass
@@ -114,6 +116,9 @@ class DemoController:
         self._sampler: threading.Thread | None = None
         self._t0 = time.monotonic()
         self._aifb: dict[str, str] = {}
+        # (wall clock, scenario live from then on; None = no scenario: stopped or switching). Reports and
+        # samples are attributed with it, so every number belongs to the scenario that was really on air.
+        self._timeline: list[tuple[float, str | None]] = [(0.0, None)]
 
     # ------------------------------------------------------------------ lifecycle
     def start(self) -> None:
@@ -129,6 +134,9 @@ class DemoController:
             self.ctrl.stop_background_workers()
 
     def start_system(self) -> None:
+        with self._lock:
+            self._samples.clear()  # a new session: plots and CDFs start empty
+        self._mark(self.scenario)  # the modems boot in this scenario (decoder 0)
         self.event("busy", "Starting gNB, UE and traffic")
         threading.Thread(target=self._start_worker, name="demo-start", daemon=True).start()
 
@@ -139,6 +147,7 @@ class DemoController:
         except Exception as exc:  # noqa: BLE001
             log.warning("stop traffic: %s", exc)
         self.ctrl.stop_system()
+        self._mark(None)
         with self._lock:
             self.decoder = 0  # next boot starts on decoder 0
             if self.scenario == "cross":
@@ -195,6 +204,7 @@ class DemoController:
                     self.event("info", f"{_title(key)} selected; applied when the system is running")
                     return
                 t0 = time.monotonic()
+                self._mark(None)  # from the click until the gNB confirms, reports belong to no scenario
                 if key in DECODER and self.decoder != DECODER[key]:
                     self._swap_decoder(DECODER[key])
                 if self.ctrl.get_snapshot().csi_mode != CSI_MODE[key]:
@@ -206,12 +216,15 @@ class DemoController:
                                        f"decoder={status.get('decoder')}")
                 with self._lock:
                     self.scenario = key
+                self._mark(key)
                 self.event("ok", f"{_title(prev)} -> {_title(key)} in {time.monotonic() - t0:.2f} s")
         except Exception as exc:  # noqa: BLE001
             log.exception("scenario switch failed")
             self.event("fail", f"Switch to {_title(key)} failed: {exc}")
             with self._lock:
                 self.target = self.scenario
+            # the radio state is uncertain after a failed switch: count nothing until the next good one
+            self._mark(None)
         finally:
             with self._lock:
                 self._switching = False
@@ -258,6 +271,21 @@ class DemoController:
             time.sleep(0.05)
         raise RuntimeError("Legacy/AI switch timed out")
 
+    # ------------------------------------------------------------------ scenario timeline
+    def _mark(self, key: str | None) -> None:
+        with self._lock:
+            self._timeline.append((time.time(), key))
+
+    def scenario_at(self, t_wall: float, settle_s: float = 0.0) -> str | None:
+        """Scenario that was live at wall-clock time t_wall (None: stopped / switching / within settle_s of
+        the start of that scenario). The UE timestamps its channel reports with the same clock."""
+        with self._lock:
+            i = bisect.bisect_right([t for t, _ in self._timeline], t_wall) - 1
+            t_from, key = self._timeline[max(i, 0)]
+        if key is None or t_wall - t_from < settle_s:
+            return None
+        return key
+
     # ------------------------------------------------------------------ data for the GUI
     def event(self, level: str, text: str) -> None:
         with self._lock:
@@ -276,8 +304,10 @@ class DemoController:
             if now - traffic_since < 5.0:
                 continue  # skip iperf's ramp-up, which would bias whichever scenario runs first
             st = self._stats.poll()
+            scen = self.scenario_at(time.time(), SETTLE_S)
+            if scen is None:
+                continue  # switching, or the stats still describe the previous scenario
             with self._lock:
-                scen = self.scenario if not self._switching else self.target
                 self._samples.append(Sample(
                     t=time.monotonic() - self._t0, scenario=scen, tput_mbps=s.throughput_mbps, bler=s.bler,
                     mcs=st.dl_mcs if st else float("nan"), cqi=float(s.cqi),

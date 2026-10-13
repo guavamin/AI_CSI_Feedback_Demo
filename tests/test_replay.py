@@ -111,3 +111,27 @@ def test_worker_skips_empty_estimates(tmp_path):
         assert w.view().ready and w.view().n_reports == 0
     finally:
         w.stop()
+
+
+def test_worker_scores_only_the_scenario_on_air(tmp_path):
+    root = tmp_path / "rec"
+    (root / "csi_rs_channels").mkdir(parents=True)
+    files = dumps(3)
+    on_air = {}  # UE timestamp (s) -> scenario
+    for p, key in zip(files, ("same", None, "legacy")):
+        on_air[read_h_dump(p).timestamp_utc_us / 1e6] = key
+    w = ReplayWorker(lambda: str(root), engine_from_config(CFG), period_s=0.05, scenario_at=lambda t: on_air[t])
+    w.start()
+    try:
+        for k, p in enumerate(files):
+            shutil.copy(p, root / "csi_rs_channels" / p.name)
+            t0 = time.monotonic()
+            while w.view().n_reports < k + 1 and time.monotonic() - t0 < 10:
+                time.sleep(0.02)
+        v = w.view()
+        assert v.n_reports == 3 and v.hist_keys == ["same", None, "legacy"]
+        assert set(v.beam_cos) == {"same"}  # legacy needs i2 (no csv here); the None report scores nothing
+        assert len(v.beam_cos["same"]) == 13 and set(v.last_live) == {"same"}
+        assert v.last_live["same"].timestamp_utc_us == read_h_dump(files[0]).timestamp_utc_us
+    finally:
+        w.stop()

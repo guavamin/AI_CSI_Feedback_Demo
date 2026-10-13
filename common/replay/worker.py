@@ -37,19 +37,26 @@ class ReplayView:
     hist_codes: np.ndarray = field(default_factory=lambda: np.zeros((0, 24), dtype=np.uint8))
     hist_cqi: list[int] = field(default_factory=list)
     hist_i2: list[int] = field(default_factory=list)
-    beam_cos: dict[str, np.ndarray] = field(default_factory=dict)  # all sub-band samples so far, per scenario
+    beam_cos: dict[str, np.ndarray] = field(default_factory=dict)  # sub-band samples while that scenario was live
     ms_per_report: float = float("nan")
+    hist_keys: list = field(default_factory=list)  # scenario live for each history row (None: none / switching)
+    last_live: dict = field(default_factory=dict)  # scenario -> latest ReplayResult taken while it was live
 
 
 class ReplayWorker:
     def __init__(self, record_root: Callable[[], str], engine_factory: Callable[[], ReplayEngine],
-                 history: int = 120, cdf_samples: int = 13 * 4000, period_s: float = 0.2):
-        self._root_fn, self._factory = record_root, engine_factory
+                 history: int = 120, cdf_samples: int = 13 * 4000, period_s: float = 0.2,
+                 scenario_at: Callable[[float], str | None] | None = None):
+        """scenario_at(UE timestamp, s) -> scenario live for that report. Only that scenario is scored (cosine
+        CDF, reconstruction history), so the GUI never shows a scenario that was not on air. Without it
+        every report is scored for all three scenarios (offline checks)."""
+        self._root_fn, self._factory, self._scenario_at = record_root, engine_factory, scenario_at
         self._period = period_s
         self._lock = threading.Lock()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
-        self._hist: deque[tuple[np.ndarray, dict[str, np.ndarray], np.ndarray, int, int]] = deque(maxlen=history)
+        self._hist: deque[tuple[np.ndarray, dict[str, np.ndarray], np.ndarray, int, int, str | None]] = deque(maxlen=history)
+        self._last_live: dict[str, ReplayResult] = {}
         self._cos = {k: deque(maxlen=cdf_samples) for k in KEYS}
         self._view = ReplayView()
         self._last_path: Path | None = None
@@ -70,6 +77,7 @@ class ReplayWorker:
         """Forget the history and the CDF samples (e.g. new session)."""
         with self._lock:
             self._hist.clear()
+            self._last_live.clear()
             for d in self._cos.values():
                 d.clear()
             self._view = ReplayView(ready=self._view.ready)
@@ -139,12 +147,16 @@ class ReplayWorker:
         t0 = time.perf_counter()
         res = engine.process(dump, i2)
         ms = (time.perf_counter() - t0) * 1e3
+        live = KEYS if self._scenario_at is None else (self._scenario_at(dump.timestamp_utc_us / 1e6),)
         with self._lock:
             self._hist.append((np.abs(res.truth[0, 0]).astype(np.float32),
                                {k: np.abs(v[0, 0]).astype(np.float32) for k, v in res.recon.items()},
-                               res.codes.astype(np.uint8), cqi, -1 if i2 is None else i2))
-            for key, vals in res.beam_cos.items():
-                self._cos[key].extend(vals.tolist())
+                               res.codes.astype(np.uint8), cqi, -1 if i2 is None else i2,
+                               live[0] if len(live) == 1 else None))
+            for key in live:
+                if key in res.beam_cos:
+                    self._cos[key].extend(res.beam_cos[key].tolist())
+                    self._last_live[key] = res
             hist = list(self._hist)
             self._view = ReplayView(
                 ready=True, n_reports=self._view.n_reports + 1, last=res,
@@ -152,7 +164,7 @@ class ReplayWorker:
                 hist_recon={k: np.stack([h[1][k] for h in hist]) for k in res.recon},
                 hist_codes=np.stack([h[2] for h in hist]), hist_cqi=[h[3] for h in hist],
                 hist_i2=[h[4] for h in hist], beam_cos={k: np.array(d) for k, d in self._cos.items() if d},
-                ms_per_report=ms)
+                ms_per_report=ms, hist_keys=[h[5] for h in hist], last_live=dict(self._last_live))
 
 
 def engine_from_config(cfg) -> Callable[[], ReplayEngine]:

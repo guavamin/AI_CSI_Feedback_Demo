@@ -164,3 +164,33 @@ def test_selection_before_the_system_runs(monkeypatch):
 ])
 def test_bringup_steps(snap, expect):
     assert [st for _, st in dc.bringup_steps(RuntimeSnapshot(**snap))] == expect
+
+
+def test_scenario_timeline(monkeypatch):
+    demo, gnb, _ = make(monkeypatch)
+    clock = [1000.0]
+    monkeypatch.setattr(dc.time, "time", lambda: clock[0])
+    assert demo.scenario_at(999.0) is None  # nothing before the system starts
+    demo.ctrl.start_system = lambda: None
+    demo._start_worker = lambda: None
+    demo.start_system()  # boots in legacy at t=1000
+    clock[0] = 1010.0
+    demo.set_scenario("cross")
+    wait(demo)  # switch marked at 1010 (None) and confirmed at 1010 (cross)
+    clock[0] = 1020.0
+    assert demo.scenario_at(1005.0) == "legacy"
+    assert demo.scenario_at(1015.0) == "cross"
+    assert demo.scenario_at(1011.0, settle_s=2.0) is None  # BLER / MCS still settling
+    assert demo.scenario_at(1013.0, settle_s=2.0) == "cross"
+    demo.ctrl.stop_system = lambda: None
+    demo.ctrl.stop_iperf_traffic = lambda: None
+    demo.stop_system()
+    assert demo.scenario_at(1021.0) is None
+
+
+def test_failed_switch_counts_for_no_scenario(monkeypatch):
+    demo, gnb, _ = make(monkeypatch, alt_loaded=False, boot="csinet")
+    demo._mark("same")
+    demo.set_scenario("cross")
+    wait(demo)
+    assert demo.scenario_at(time.time() + 1) is None

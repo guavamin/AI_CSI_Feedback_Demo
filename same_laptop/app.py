@@ -67,7 +67,8 @@ class App:
         self.cfg = load_config(args.profile)
         self.ota = not self.cfg.oai.rfsim
         self.demo = DemoController(self.cfg)
-        self.replay = ReplayWorker(lambda: self.demo.view().csi_record_root, engine_from_config(self.cfg))
+        self.replay = ReplayWorker(lambda: self.demo.view().csi_record_root, engine_from_config(self.cfg),
+                                   scenario_at=self.demo.scenario_at)
         self.res: dict = {}
         self.t: dict = {}  # tags of live items
         self.state: dict = {}  # pending UI actions, applied between frames
@@ -514,12 +515,17 @@ class App:
             dpg.set_value("ch_status", rv.error)
             return
         if rv.last is None:
+            for k in KEYS:
+                dpg.set_value(self.t[f"cos_{k}"], [[], []])
             dpg.set_value("ch_status", "Waiting for the UE's channel reports..." if view.radio.ue_running
                           else "Start the system to see the channel.")
             return
         last = rv.last
+        n_live = sum(1 for k in rv.hist_keys if k == key)
         dpg.set_value("ch_status", f"{rv.n_reports} channel reports replayed  ·  frame {last.frame}  ·  "
-                                   f"{rv.ms_per_report:.1f} ms each  ·  replay = OAI's own model code")
+                                   f"{rv.ms_per_report:.1f} ms each  ·  {SCENARIO[key]['title']}: {n_live} of the "
+                                   f"last {len(rv.hist_keys)} reports  ·  each report counts only for the scenario "
+                                   f"that was on air")
         tm = np.abs(last.truth)
         scale = float(tm.max()) or 1.0
 
@@ -541,8 +547,11 @@ class App:
 
         hist("heat_truth_hist", rv.hist_truth)
         if key != "legacy" and dpg.does_item_exist("heat_recon_now"):
-            dpg.set_value("heat_recon_now", [np.clip(links(np.abs(last.recon[key])), 0, 1).ravel().tolist()])
-            hist("heat_recon_hist", rv.hist_recon[key])
+            live = rv.last_live.get(key)  # latest report decoded while this scenario was on air
+            now = links(np.abs(live.recon[key])) if live is not None else np.zeros((4, HEAT_COLS))
+            dpg.set_value("heat_recon_now", [np.clip(now, 0, 1).ravel().tolist()])
+            on_air = np.array([k == key for k in rv.hist_keys])[:, None]  # other rows stay dark
+            hist("heat_recon_hist", np.where(on_air, rv.hist_recon[key], 0.0))
         x = list(range(612))
         for r, c in LINKS:
             dpg.set_value(self.t[f"link_{r}{c}"], [x, (tm[r, c] / scale).tolist()])
@@ -554,6 +563,8 @@ class App:
                 lo = min(lo, float(np.floor(v[int(0.02 * (v.size - 1))] * 10) / 10))  # keep 98% of every curve
                 idx = np.linspace(0, v.size - 1, min(v.size, 400)).astype(int)
                 dpg.set_value(self.t[f"cos_{k}"], [v[idx].tolist(), ((idx + 1) / v.size).tolist()])
+            else:
+                dpg.set_value(self.t[f"cos_{k}"], [[], []])  # not on air this session (yet)
         dpg.set_axis_limits(self.t["cos_x"], lo, 1.0)
 
     # ------------------------------------------------------------------ main loop
@@ -563,7 +574,12 @@ class App:
                 self.state["scenario"] = key
 
     def run(self):
-        logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+        log_dir = REPO / "data/runs/gui_logs"  # the GUI's own events, kept next to the softmodem logs
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_file = log_dir / time.strftime("gui_%Y%m%d_%H%M%S.log")
+        logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+                            handlers=[logging.StreamHandler(), logging.FileHandler(log_file)])
+        log.info("profile %s, GUI log %s", self.args.profile, log_file)
         dpg.create_context()
         dpg.create_viewport(title="Interoperable AI-Native CSI Feedback · Live OAI prototype", width=1920, height=1080)
         dpg.setup_dearpygui()
