@@ -3,3 +3,4 @@ __pycache__/
 *.pyc
 data/mockups/screenshots/
 data/runs/
+data/native/
