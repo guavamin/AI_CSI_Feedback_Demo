@@ -16,7 +16,9 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import subprocess
+import sys
 import threading
 import time
 from contextlib import contextmanager
@@ -661,7 +663,14 @@ def main() -> None:
     ap.add_argument("--fullscreen", action="store_true")
     ap.add_argument("--script", default="", help="testing: comma-separated <seconds>:<action>, actions "
                     "start | stop | legacy | same | cross | demo | channel | shot=<png> | quit")
-    App(ap.parse_args()).run()
+    args = ap.parse_args()
+    # Checked before anything starts: the controller clears stray softmodems and creates run folders.
+    if os.geteuid() == 0:
+        sys.exit("Run the GUI as your normal user, not as root (no sudo / su): it starts the gNB and UE through\n"
+                 "the passwordless sudo rule (/etc/sudoers.d/pyoaicsinet), and root has no access to your display.")
+    if not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")):
+        sys.exit("No display: start the GUI from a terminal inside the desktop session (DISPLAY is not set).")
+    App(args).run()
 
 
 if __name__ == "__main__":
