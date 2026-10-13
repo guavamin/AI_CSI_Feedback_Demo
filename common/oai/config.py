@@ -85,6 +85,9 @@ class OaiConfig:
     csi_record: bool = False
     # Keep this many newest H_*.bin files; older dumps are deleted while running
     csi_record_keep_h: int = 2
+    # Parent folder of the per-session record dirs ("" = <logging.root_dir>/csi_record). Put it in RAM
+    # (/dev/shm/...) so the UE's real-time thread never waits for the disk when writing a dump.
+    csi_record_dir: str = ""
     # How the GUI obtains CSI-RS |H|: file (local Phase 1), udp (forwarder), both
     csi_transport: str = "file"
     # Destination host for the local/remote Option-A forwarder (port = network.csirs_udp_port)
@@ -283,6 +286,7 @@ def _load_oai(data: dict[str, Any] | None) -> OaiConfig:
         rfsim=bool(data.get("rfsim", True)),
         csi_record=bool(data.get("csi_record", False)),
         csi_record_keep_h=max(1, int(data.get("csi_record_keep_h", 2))),
+        csi_record_dir=str(data.get("csi_record_dir") or ""),
         csi_transport=str(data.get("csi_transport") or "file").strip().lower() or "file",
         csi_udp_dest_host=str(data.get("csi_udp_dest_host") or "127.0.0.1").strip()
         or "127.0.0.1",

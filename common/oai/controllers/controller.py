@@ -190,7 +190,8 @@ class Controller:
             # Option A always needs on-disk H dumps from the UE, even when the GUI
             # consumes them only via UDP (local or remote forwarder).
             if cfg.oai.csi_record:
-                csi_root = (log_root / "csi_record" / stamp).expanduser().resolve()
+                parent = Path(cfg.oai.csi_record_dir) if cfg.oai.csi_record_dir else log_root / "csi_record"
+                csi_root = (parent / stamp).expanduser().resolve()
                 ensure_record_tree(csi_root)
                 self.csirs_record_root = csi_root
                 self.launcher.csi_record_path = csi_root

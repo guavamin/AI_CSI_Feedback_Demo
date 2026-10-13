@@ -135,3 +135,23 @@ def test_worker_scores_only_the_scenario_on_air(tmp_path):
         assert v.last_live["same"].timestamp_utc_us == read_h_dump(files[0]).timestamp_utc_us
     finally:
         w.stop()
+
+
+def test_worker_keeps_session_reports(tmp_path):
+    root, keep = tmp_path / "rec", tmp_path / "session"
+    (root / "csi_rs_channels").mkdir(parents=True)
+    p = dumps(1)[0]
+    shutil.copy(p, root / "csi_rs_channels" / p.name)
+    w = ReplayWorker(lambda: str(root), engine_from_config(CFG), period_s=0.05, scenario_at=lambda t: "cross",
+                     save_dir=lambda: str(keep))
+    w.start()
+    try:
+        t0 = time.monotonic()
+        while w.view().n_reports < 1 and time.monotonic() - t0 < 10:
+            time.sleep(0.02)
+    finally:
+        w.stop()
+    rows = list(csv.DictReader(open(keep / "reports.csv")))
+    assert len(rows) == 1 and rows[0]["on_air"] == "cross" and rows[0]["file"] == p.name
+    assert float(rows[0]["beam_cos_cross"]) > 0 and len(rows[0]["payload"]) == 12
+    assert (keep / "dumps" / p.name).read_bytes() == p.read_bytes()

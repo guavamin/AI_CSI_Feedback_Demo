@@ -46,11 +46,15 @@ class ReplayView:
 class ReplayWorker:
     def __init__(self, record_root: Callable[[], str], engine_factory: Callable[[], ReplayEngine],
                  history: int = 120, cdf_samples: int = 13 * 4000, period_s: float = 0.2,
-                 scenario_at: Callable[[float], str | None] | None = None):
+                 scenario_at: Callable[[float], str | None] | None = None,
+                 save_dir: Callable[[], str] | None = None):
         """scenario_at(UE timestamp, s) -> scenario live for that report. Only that scenario is scored (cosine
         CDF, reconstruction history), so the GUI never shows a scenario that was not on air. Without it
         every report is scored for all three scenarios (offline checks)."""
         self._root_fn, self._factory, self._scenario_at = record_root, engine_factory, scenario_at
+        # save_dir() -> folder that keeps every replayed report (raw dump + one CSV row) for later analysis;
+        # "" = do not keep. The UE's own dumps are deleted within a second.
+        self._save_fn = save_dir
         self._period = period_s
         self._lock = threading.Lock()
         self._stop = threading.Event()
@@ -148,6 +152,7 @@ class ReplayWorker:
         res = engine.process(dump, i2)
         ms = (time.perf_counter() - t0) * 1e3
         live = KEYS if self._scenario_at is None else (self._scenario_at(dump.timestamp_utc_us / 1e6),)
+        self._save(path, res, live[0] if len(live) == 1 else "all", cqi)
         with self._lock:
             self._hist.append((np.abs(res.truth[0, 0]).astype(np.float32),
                                {k: np.abs(v[0, 0]).astype(np.float32) for k, v in res.recon.items()},
@@ -165,6 +170,37 @@ class ReplayWorker:
                 hist_codes=np.stack([h[2] for h in hist]), hist_cqi=[h[3] for h in hist],
                 hist_i2=[h[4] for h in hist], beam_cos={k: np.array(d) for k, d in self._cos.items() if d},
                 ms_per_report=ms, hist_keys=[h[5] for h in hist], last_live=dict(self._last_live))
+
+
+    _CSV_HEAD = ("timestamp_utc_us,frame,on_air,i2,cqi,payload,beam_cos_legacy,beam_cos_same,beam_cos_cross,"
+                 "chan_cos_same,chan_cos_cross,nmse_db_same,nmse_db_cross,file\n")
+
+    def _save(self, src: Path, res: ReplayResult, on_air, cqi: int) -> None:
+        folder = self._save_fn() if self._save_fn else ""
+        if not folder:
+            return
+        try:
+            out = Path(folder)
+            (out / "dumps").mkdir(parents=True, exist_ok=True)
+            (out / "dumps" / src.name).write_bytes(src.read_bytes())
+            index = out / "reports.csv"
+            new = not index.exists()
+
+            def m(d, k, fmt="{:.6f}"):
+                v = d.get(k)
+                return "" if v is None else fmt.format(float(np.mean(v)))
+
+            with index.open("a") as fh:
+                if new:
+                    fh.write(self._CSV_HEAD)
+                fh.write(",".join([str(res.timestamp_utc_us), str(res.frame), str(on_air or ""),
+                                   "" if res.i2 is None else str(res.i2), str(cqi), res.payload.hex(),
+                                   m(res.beam_cos, "legacy"), m(res.beam_cos, "same"), m(res.beam_cos, "cross"),
+                                   m(res.chan_cos, "same"), m(res.chan_cos, "cross"),
+                                   m(res.nmse_db, "same", "{:.3f}"), m(res.nmse_db, "cross", "{:.3f}"),
+                                   src.name]) + "\n")
+        except OSError as exc:  # never let bookkeeping stop the live view
+            log.debug("could not keep replay report: %s", exc)
 
 
 def engine_from_config(cfg) -> Callable[[], ReplayEngine]:

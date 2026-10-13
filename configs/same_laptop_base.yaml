@@ -80,6 +80,7 @@ oai:
   mode_settle_s: 2.0
   csi_record: true          # UE writes H_*.bin: ground truth for the channel view and the replay
   csi_record_keep_h: 4
+  csi_record_dir: /dev/shm/ai-csi-feedback-demo   # in RAM: the UE's real-time thread never waits for the disk
   csi_transport: file
   gnb:
     binary: "nr-softmodem"

@@ -6,6 +6,7 @@ import logging
 import os
 import signal
 import subprocess
+import threading
 import time
 from pathlib import Path
 from typing import Literal
@@ -15,6 +16,39 @@ from common.oai.config import AppConfig, SoftmodemSideConfig
 log = logging.getLogger(__name__)
 
 Side = Literal["gnb", "ue"]
+
+
+_F_SETPIPE_SZ = 1031  # fcntl.F_SETPIPE_SZ (Linux)
+
+
+def _start_log_pump(proc: subprocess.Popen, out_fh, side: str) -> None:
+    """Copy the softmodem's piped output to its log file on a background thread (this project's addition).
+
+    The pipe is enlarged to 1 MiB, so even if this thread is late the softmodem never waits on the disk.
+    """
+    fd = proc.stdout.fileno()
+    try:
+        import fcntl
+
+        fcntl.fcntl(fd, _F_SETPIPE_SZ, 1 << 20)
+    except OSError as exc:  # pragma: no cover - older kernels / limits
+        log.debug("could not enlarge %s log pipe: %s", side, exc)
+
+    def pump() -> None:
+        try:
+            while True:
+                chunk = os.read(fd, 1 << 16)
+                if not chunk:
+                    break
+                out_fh.write(chunk)
+                out_fh.flush()  # the bring-up monitor tails this file
+        except OSError as exc:  # pragma: no cover
+            log.warning("%s log pump stopped: %s", side, exc)
+        finally:
+            out_fh.close()
+            proc.stdout.close()
+
+    threading.Thread(target=pump, name=f"{side}-log", daemon=True).start()
 
 
 class SoftmodemLauncher:
@@ -137,14 +171,17 @@ class SoftmodemLauncher:
         argv = self.build_argv(side, mode)
         out_path = self.log_dir / f"{side}.stdout.log"
         self._stdout_paths[side] = out_path
-        out_fh = out_path.open("ab", buffering=0)
+        out_fh = out_path.open("ab")
 
         log.info("Starting %s in %s: %s", side, build, " ".join(argv))
         try:
+            # Through a pipe, like the OTA pipeline's "| tee": the softmodem logs from its real-time threads,
+            # and a write() straight to a disk file can block for tens of ms during a file-system flush,
+            # long enough for a USRP overflow that aborts the UE (nr-ue.c readBlockSize assertion).
             proc = subprocess.Popen(
                 argv,
                 cwd=str(build),
-                stdout=out_fh,
+                stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 stdin=subprocess.DEVNULL,
                 start_new_session=True,
@@ -152,13 +189,14 @@ class SoftmodemLauncher:
         except OSError:
             out_fh.close()
             raise
+        _start_log_pump(proc, out_fh, side)
 
         self._procs[side] = proc
         # Brief settle so immediate failures surface (USRP lib load can take >0.4s)
         settle_s = 1.2 if not oai.rfsim else 0.4
         time.sleep(settle_s)
         if proc.poll() is not None:
-            out_fh.close()
+            time.sleep(0.2)  # let the pump write the last lines
             self._procs.pop(side, None)
             tail = self._tail_text(out_path)
             detail = f" Last log lines:\n{tail}" if tail else ""

@@ -67,8 +67,9 @@ class App:
         self.cfg = load_config(args.profile)
         self.ota = not self.cfg.oai.rfsim
         self.demo = DemoController(self.cfg)
+        self.session_dir = ""  # data/runs/replay/<session>: every replayed report, for later analysis
         self.replay = ReplayWorker(lambda: self.demo.view().csi_record_root, engine_from_config(self.cfg),
-                                   scenario_at=self.demo.scenario_at)
+                                   scenario_at=self.demo.scenario_at, save_dir=lambda: self.session_dir)
         self.res: dict = {}
         self.t: dict = {}  # tags of live items
         self.state: dict = {}  # pending UI actions, applied between frames
@@ -285,8 +286,9 @@ class App:
                         with dpg.plot_axis(dpg.mvYAxis, label=lab) as ya:
                             self.t[f"{attr}_y"] = ya
                             self.t[f"{attr}_shade"] = [dpg.add_shade_series([], [], y2=[]) for _ in range(POOL)]
-                            self.t[f"{attr}_raw"] = dpg.add_line_series([], [])
-                            dpg.bind_item_theme(self.t[f"{attr}_raw"], self.res["raw"])
+                            self.t[f"{attr}_raw"] = [dpg.add_line_series([], []) for _ in range(POOL)]
+                            for r_ in self.t[f"{attr}_raw"]:
+                                dpg.bind_item_theme(r_, self.res["raw"])
                             self.t[f"{attr}_line"] = [dpg.add_line_series([], []) for _ in range(POOL)]
                     self.axis_font(pl)
                 with dpg.child_window(width=col_w, height=ph, border=True, no_scrollbar=True) as pc:
@@ -452,13 +454,14 @@ class App:
     def refresh_plots(self, view: DemoView):
         if not view.samples:
             return
-        t_end = view.samples[-1].t
-        win = [s for s in view.samples if s.t >= t_end - WINDOW_S]
-        t = np.array([s.t for s in win])
+        t_first = view.samples[0].t  # the session's first sample: the time axis starts at 0 there
+        t_end = view.samples[-1].t - t_first
+        win = [s for s in view.samples if s.t - t_first >= t_end - WINDOW_S]
+        t = np.array([s.t - t_first for s in win])
         scen = [s.scenario for s in win]
         segs, start = [], 0  # contiguous runs of one scenario, newest last
         for i in range(1, len(win) + 1):
-            if i == len(win) or scen[i] != scen[start]:
+            if i == len(win) or scen[i] != scen[start] or t[i] - t[i - 1] > 2.5:  # new scenario or a pause
                 segs.append((start, i, scen[start]))
                 start = i
         segs = segs[-POOL:]
@@ -475,9 +478,8 @@ class App:
             dpg.set_axis_limits(self.t[f"{attr}_x"], x_lo, x_hi)
             dpg.set_axis_limits(self.t[f"{attr}_y"], 0.0, y_hi)
             yc = np.where(np.isfinite(y), y, 0.0)
-            dpg.set_value(self.t[f"{attr}_raw"], [t.tolist(), yc.tolist()])
             for j in range(POOL):
-                shade, line = self.t[f"{attr}_shade"][j], self.t[f"{attr}_line"][j]
+                shade, line, raw = self.t[f"{attr}_shade"][j], self.t[f"{attr}_line"][j], self.t[f"{attr}_raw"][j]
                 if j < len(segs):
                     a, b, key = segs[j]
                     xs = t[a:b].tolist()
@@ -488,26 +490,27 @@ class App:
                     dpg.bind_item_theme(shade, self.res["shade"][key])
                     dpg.set_value(line, [xs, roll(yc[a:b].tolist())])
                     dpg.bind_item_theme(line, self.res["line"][key])
+                    dpg.set_value(raw, [xs, yc[a:b].tolist()])  # per segment: no line across skipped seconds
                 else:
                     dpg.set_value(shade, [[], [], [], [], []])
                     dpg.set_value(line, [[], []])
-            # CDFs over the whole session, per scenario
-            hi = 0.0
+                    dpg.set_value(raw, [[], []])
+            # CDFs over the whole session, per scenario; the x axis spans the data
+            lo, hi = np.inf, -np.inf
             for key in KEYS:
                 v = np.sort(np.array([getattr(s, attr) for s in view.samples if s.scenario == key], dtype=float))
                 v = v[np.isfinite(v)]
-                hi = max(hi, float(v.max()) if v.size else 0.0)
+                if v.size:
+                    lo, hi = min(lo, float(v[0])), max(hi, float(v[-1]))
                 if v.size:
                     idx = np.linspace(0, v.size - 1, min(v.size, 300)).astype(int)
                     dpg.set_value(self.t[f"{attr}_cdf_{key}"], [v[idx].tolist(), ((idx + 1) / v.size).tolist()])
                 else:
                     dpg.set_value(self.t[f"{attr}_cdf_{key}"], [[], []])
-            if attr == "tput_mbps":
-                dpg.set_axis_limits(self.t[f"{attr}_cx"], 0.0, max(10.0, float(np.ceil(hi * 1.1 / 5) * 5)))
-            elif attr == "mcs":
-                dpg.set_axis_limits(self.t[f"{attr}_cx"], 0.0, 30.0 if hi > 15 else 16.0)
-            else:
-                dpg.set_axis_limits(self.t[f"{attr}_cx"], 0.0, max(0.25, float(np.ceil(hi * 1.2 * 20) / 20)))
+            if np.isfinite(lo):
+                pad = max((hi - lo) * 0.05, {"tput_mbps": 0.5, "mcs": 0.5, "bler": 0.005}[attr])
+                x_min = lo - pad if lo <= 0 else max(0.0, lo - pad)  # a curve at 0 stays visible
+                dpg.set_axis_limits(self.t[f"{attr}_cx"], x_min, hi + pad)
 
     def refresh_channel(self, view: DemoView, rv: ReplayView):
         key = view.scenario
@@ -610,6 +613,8 @@ class App:
                     self.demo.set_scenario(self.state.pop("scenario"))
                 if self.state.pop("start", False):
                     self.replay.clear()  # a new session: new channel history and cosine CDFs
+                    self.session_dir = str(REPO / "data/runs/replay" / time.strftime("%Y%m%d_%H%M%S"))
+                    log.info("session: replayed reports kept in %s", self.session_dir)
                     self.demo.start_system()
                 if self.state.pop("stop", False):
                     threading.Thread(target=self.demo.stop_system, name="demo-stop", daemon=True).start()
