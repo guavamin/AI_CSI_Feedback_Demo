@@ -5,7 +5,6 @@ ones the gNB actually received over the air (gNB decode log), i.e. replay == UE 
 """
 
 import re
-import statistics
 import sys
 import time
 from pathlib import Path

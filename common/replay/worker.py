@@ -132,6 +132,8 @@ class ReplayWorker:
         if dump is None:
             return  # still being written, or already deleted
         self._last_path = path
+        if int(np.abs(dump.iq).max()) < 4:
+            return  # empty estimate (UE starting or shutting down): nothing to score
         self._read_reports(root)
         i2, cqi = self._report.get(path.name, (None, -1))
         t0 = time.perf_counter()

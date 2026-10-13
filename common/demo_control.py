@@ -153,6 +153,12 @@ class DemoController:
             s = self.ctrl.get_snapshot()
             if s.traffic_stage == "running" and s.iperf_client_running:
                 self.event("ok", f"Traffic running to UE {s.ue_ip}")
+                try:  # one read so the GUI can show the live-switch control as reachable
+                    st = self._aifb_status()
+                    self.event("ok", f"gNB live switch ready (decoder {st.get('decoder')}, "
+                                     f"alternative decoder {'loaded' if st.get('alt_decoder_loaded') == '1' else 'missing'})")
+                except Exception as exc:  # noqa: BLE001
+                    self.event("fail", f"gNB telnet not reachable: {exc}")
                 with self._lock:
                     want = self.target
                 if want != self.scenario:  # a scenario picked before the system was up
@@ -259,10 +265,16 @@ class DemoController:
         log.info("[%s] %s", level, text)
 
     def _sample_loop(self) -> None:
+        traffic_since = None
         while not self._stop.wait(1.0):
             s = self.ctrl.get_snapshot()
-            if not (s.gnb_running and s.ue_running):
-                continue
+            if not (s.gnb_running and s.ue_running and s.traffic_stage == "running"):
+                traffic_since = None
+                continue  # plots and CDFs describe the link under traffic, not the bring-up
+            now = time.monotonic()
+            traffic_since = traffic_since or now
+            if now - traffic_since < 5.0:
+                continue  # skip iperf's ramp-up, which would bias whichever scenario runs first
             st = self._stats.poll()
             with self._lock:
                 scen = self.scenario if not self._switching else self.target
@@ -270,6 +282,11 @@ class DemoController:
                     t=time.monotonic() - self._t0, scenario=scen, tput_mbps=s.throughput_mbps, bler=s.bler,
                     mcs=st.dl_mcs if st else float("nan"), cqi=float(s.cqi),
                     ul_snr_db=st.ul_snr_db if st else float("nan"), rsrp_dbm=st.rsrp_dbm if st else float("nan")))
+
+    def state_key(self) -> tuple[str, str, bool]:
+        """Cheap (scenario, target, switching) for a render loop; view() copies everything."""
+        with self._lock:
+            return self.scenario, self.target, self._switching
 
     def view(self) -> DemoView:
         radio = self.ctrl.get_snapshot()

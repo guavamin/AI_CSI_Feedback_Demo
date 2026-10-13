@@ -95,3 +95,19 @@ def test_worker_follows_newest_report(tmp_path):
         assert v.ms_per_report < 200
     finally:
         w.stop()
+
+
+def test_worker_skips_empty_estimates(tmp_path):
+    root = tmp_path / "rec"
+    (root / "csi_rs_channels").mkdir(parents=True)
+    src = dumps(1)[0]
+    raw = bytearray(src.read_bytes())
+    raw[28:] = bytes(len(raw) - 28)  # header kept, channel all zero (UE shutting down)
+    (root / "csi_rs_channels" / src.name).write_bytes(bytes(raw))
+    w = ReplayWorker(lambda: str(root), engine_from_config(CFG), period_s=0.05)
+    w.start()
+    try:
+        time.sleep(1.0)
+        assert w.view().ready and w.view().n_reports == 0
+    finally:
+        w.stop()
