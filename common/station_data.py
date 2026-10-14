@@ -29,6 +29,7 @@ from common.replay.native import NativeTransformer, build_library
 log = logging.getLogger(__name__)
 ANSI = re.compile(r"\x1b\[[0-9;]*m")
 HISTORY = 120  # reports kept for the "recent reports" heat maps
+AI_NEAR_S = 0.1  # gNB: a PMI line this close to an AI latent belongs to AI feedback, not legacy
 MIN_SPACING_S = 0.08  # gNB history: at most one report per 80 ms (the UE dumps about that often)
 
 
@@ -235,7 +236,7 @@ class GnbChannelWorker:
         self._hist: deque = deque(maxlen=HISTORY)
         self._view = ChannelView()
         self._latents, self._legacy = FileTail(), FileTail()
-        self._ai_frames: set = set()
+        self._ai_times: deque = deque(maxlen=4000)  # wall-clock times of recent AI latents
         self._pending: list = []
         self._last_t = 0.0
         self._thread: threading.Thread | None = None
@@ -283,20 +284,26 @@ class GnbChannelWorker:
             f = line.split(",")
             if len(f) == 8 and f[0].isdigit() and f[5] == "1":
                 self._pending.append(("ai", int(f[0]) / 1e6, int(f[4]), bytes.fromhex(f[7])))
-                self._ai_frames.add((f[1], f[2]))
+            if len(f) == 8 and f[0].isdigit():
+                self._ai_times.append(int(f[0]) / 1e6)
         for line in self._legacy.lines():  # timestamp_utc_us,frame,slot,rnti,cri,ri,li,pmi_x1,pmi_x2,...
             f = line.split(",")
             if len(f) >= 9 and f[0].isdigit():
-                self._pending.append(("pmi", int(f[0]) / 1e6, int(f[8]), (f[1], f[2])))
-        # The gNB writes a report's latent line just before its PMI line (same function), so a PMI line is
-        # classified once both files have surely been read past it; AI reports also produce a PMI line
-        # (all zero), which is dropped.
+                self._pending.append(("pmi", int(f[0]) / 1e6, int(f[8]), b""))
+        # The gNB writes a PMI line for every CSI report it processes, AI ones included (all zero; over the air
+        # also a second one in the next slot). A PMI line is legacy only when no AI latent came within
+        # AI_NEAR_S of it (AI latents arrive every 40 ms, in Legacy there are none). Lines are classified once
+        # both files have surely been read past them.
         cutoff = time.time() - 0.5
         ready = sorted((r for r in self._pending if r[1] < cutoff), key=lambda r: r[1])
         self._pending = [r for r in self._pending if r[1] >= cutoff]
-        rows = [r for r in ready if r[0] == "ai" or r[3] not in self._ai_frames]
-        if len(self._ai_frames) > 20000:
-            self._ai_frames.clear()
+        ai_t = np.array(self._ai_times)
+
+        def near_ai(t):
+            i = np.searchsorted(ai_t, t)
+            return any(0 <= j < ai_t.size and abs(ai_t[j] - t) < AI_NEAR_S for j in (i - 1, i))
+
+        rows = [r for r in ready if r[0] == "ai" or not near_ai(r[1])]
         t_from = rows[-1][1] - 1.2 * HISTORY * MIN_SPACING_S if rows else 0.0  # first read of a long file
         for kind, t, value, payload in (r for r in rows if r[1] >= t_from):
             if t - self._last_t < MIN_SPACING_S:

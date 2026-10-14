@@ -53,4 +53,5 @@ Mockups on recorded data: `.venv/bin/python -m separate_laptops.{gnb,ue}_station
     .venv/bin/python -m tools.e2e_stations --radio usrp       # both B210s on this machine
 
 Start, three scenario switches confirmed on both sides, each side's data and channel view, a UE crash and its
-recovery, Stop. RF sim, 2026-10-14: 33/33.
+recovery, Stop. 2026-10-14: RF sim 33/33; over the air (both B210s on one laptop, 100 ms one-way link delay)
+33/33.
