@@ -25,7 +25,11 @@ How the pieces fit:
 
 ## Set up a laptop (once)
 
-Put this repository at `~/Desktop/InterDigital_Project/ai-csi-feedback-demo`, then from a root shell:
+As your normal user:
+
+    git clone https://github.com/guavamin/AI_CSI_Feedback_Demo.git ~/Desktop/InterDigital_Project/ai-csi-feedback-demo
+
+then from a root shell (OAI comes from github.com/guavamin/OAI_CSINET, branch gui-live-switch):
 
     bash ~/Desktop/InterDigital_Project/ai-csi-feedback-demo/separate_laptops/setup_station.sh
 
