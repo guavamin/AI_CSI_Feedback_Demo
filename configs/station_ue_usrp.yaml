@@ -1,0 +1,5 @@
+# UE laptop, over the air: UE on its B210 (external 10 MHz / PPS from GPS), traffic receiver.
+extends: station_usrp.yaml
+profile: station_ue_usrp
+station:
+  listen: "0.0.0.0"

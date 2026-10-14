@@ -65,6 +65,8 @@ class SoftmodemSideConfig:
     base_args: list[str] = field(default_factory=list)
     # keyed by legacy | csinet — argv appended after base_args
     mode_args: dict[str, list[str]] = field(default_factory=dict)
+    # appended after base_args: lets a profile add arguments without repeating the inherited base_args
+    extra_args: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -230,6 +232,7 @@ class AppConfig:
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     devices: DevicesConfig = field(default_factory=DevicesConfig)
     gui: GuiConfig = field(default_factory=GuiConfig)
+    station: dict[str, Any] = field(default_factory=dict)  # separate-laptops station settings, as written
 
 
 def _from_mapping(cls, data: dict[str, Any] | None):
@@ -257,6 +260,7 @@ def _load_softmodem_side(data: dict[str, Any] | None, *, default_binary: str) ->
         model_path=str(data.get("model_path") or ""),
         base_args=[str(x) for x in base_args],
         mode_args=mode_args,
+        extra_args=[str(x) for x in (data.get("extra_args") or [])],
     )
 
 
@@ -436,6 +440,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         logging=_from_mapping(LoggingConfig, raw.get("logging")),
         devices=_from_mapping(DevicesConfig, raw.get("devices")),
         gui=_from_mapping(GuiConfig, raw.get("gui")),
+        station=dict(raw.get("station") or {}),
     )
     return _apply_env(cfg)
 

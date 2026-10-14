@@ -204,27 +204,39 @@ class ScheduledSwitchResult:
     replies: dict[str, str] = field(default_factory=dict)
 
 
-def _on_both(sides: dict[str, tuple[str, int]], command: str, timeout_s: float) -> dict[str, tuple[bool, str]]:
+# A side is a telnet (host, port), or a callable send(command, timeout_s) -> reply for a softmodem on another
+# laptop (separate-laptops demo: the UE station forwards the command to its own UE). A callable must raise
+# OSError (e.g. ConnectionError) when the other side cannot be reached.
+
+
+def _send(side, command: str, timeout_s: float) -> str:
+    if callable(side):
+        return side(command, timeout_s)
+    return telnet_command(side[0], side[1], command, timeout_s)
+
+
+def _on_both(sides: dict, command: str, timeout_s: float) -> dict[str, tuple[bool, str]]:
     """Send the same command to every side in parallel; (ok, reply-or-error) per side."""
     out: dict[str, tuple[bool, str]] = {}
 
-    def run(name: str, host: str, port: int) -> None:
+    def run(name: str, side) -> None:
+        where = "link" if callable(side) else f"telnet {side[0]}:{side[1]}"
         try:
-            out[name] = (True, telnet_command(host, port, command, timeout_s))
+            out[name] = (True, _send(side, command, timeout_s))
         except OSError as exc:
-            out[name] = (False, f"{name} telnet {host}:{port} failed: {exc}")
+            out[name] = (False, f"{name} {where} failed: {exc}")
 
-    threads = [threading.Thread(target=run, args=(n, h, p), daemon=True) for n, (h, p) in sides.items()]
+    threads = [threading.Thread(target=run, args=(n, sd), daemon=True) for n, sd in sides.items()]
     for t in threads:
         t.start()
     for t in threads:
-        t.join(timeout_s + 0.5)
+        t.join(timeout_s + (4.0 if any(callable(sd) for sd in sides.values()) else 0.5))
     for name in sides:
         out.setdefault(name, (False, f"{name}: no reply"))
     return out
 
 
-def _wait_no_pending(sides: dict[str, tuple[str, int]], timeout_s: float, max_wait_s: float = 3.5) -> None:
+def _wait_no_pending(sides: dict, timeout_s: float, max_wait_s: float = 3.5) -> None:
     """Wait until no side has a switch pending.
 
     OAI keeps a fired switch pending for AI_FB_LIVE_COMMIT_MARGIN_FRAMES (80 ms) after its target so
@@ -245,7 +257,7 @@ def _wait_no_pending(sides: dict[str, tuple[str, int]], timeout_s: float, max_wa
 
 
 def _arm_both(
-    sides: dict[str, tuple[str, int]], value: int, lead: int, timeout_s: float, max_attempts: int
+    sides: dict, value: int, lead: int, timeout_s: float, max_attempts: int
 ) -> tuple[int, int, int, float, dict[str, str]]:
     """Arm the same switch on every side. Returns (target, lead, attempts, t_gnb_status, replies).
 
@@ -254,7 +266,7 @@ def _arm_both(
     """
     last_err = ""
     for attempt in range(1, max_attempts + 1):
-        status = parse_aifb_status(telnet_command(*sides["gnb"], "aifb status", timeout_s))
+        status = parse_aifb_status(_send(sides["gnb"], "aifb status", timeout_s))
         t_status = time.monotonic()
         now = int(status.get("frame", "-1"))
         if now < 0:
@@ -282,6 +294,7 @@ def apply_mode_scheduled(
     timeout_s: float = 1.0,
     max_attempts: int = 3,
     on_armed: Callable[[int, int], None] | None = None,
+    ue_send: Callable[[str, float], str] | None = None,
 ) -> ScheduledSwitchResult:
     """Switch gNB and UE to ``mode`` at the same SFN (arm -> confirm -> fire -> verify).
 
@@ -291,9 +304,11 @@ def apply_mode_scheduled(
     3. wait until the gNB passes the target frame (both sides switch there on their own);
     4. read ``aifb status`` on both sides; if they disagree, run the procedure once more (a side that
        already has the value answers "no change needed").
+
+    ue_send: the UE is on another laptop; its commands go through this callable (see _send).
     """
     value = pucch_replace_for_mode(mode)
-    sides = {"gnb": (gnb_host, gnb_port), "ue": (ue_host, ue_port)}
+    sides = {"gnb": (gnb_host, gnb_port), "ue": ue_send or (ue_host, ue_port)}
     lead = max(int(lead_frames), OAI_MIN_LEAD_FRAMES + 2)
     t0 = time.monotonic()
     resynced = False
@@ -310,7 +325,7 @@ def apply_mode_scheduled(
             # wall-clock time, decide when the switch happens, so only bound the wait generously.
             deadline = time.monotonic() + max(2.0, 20 * used_lead * FRAME_S)
             while True:
-                now = int(parse_aifb_status(telnet_command(*sides["gnb"], "aifb status", timeout_s)).get("frame", "-1"))
+                now = int(parse_aifb_status(_send(sides["gnb"], "aifb status", timeout_s)).get("frame", "-1"))
                 if now >= 0 and sfn_delta(now, target) >= 1:
                     break
                 if time.monotonic() > deadline:

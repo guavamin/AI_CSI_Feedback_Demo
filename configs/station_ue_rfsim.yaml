@@ -1,0 +1,8 @@
+# UE station with the RF simulator: the UE's simulated radio connects to the gNB laptop (GNB_STATION).
+extends: station_rfsim.yaml
+profile: station_ue_rfsim
+station:
+  listen: "0.0.0.0"
+oai:
+  ue:
+    extra_args: ["--rfsimulator.[0].serveraddr", "${GNB_STATION}"]

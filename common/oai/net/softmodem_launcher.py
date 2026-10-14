@@ -86,6 +86,7 @@ class SoftmodemLauncher:
             argv.extend(["-O", conf])
 
         argv.extend(str(a) for a in (sc.base_args or []))
+        argv.extend(str(a) for a in (sc.extra_args or []))
 
         mode_key = (mode or "legacy").strip().lower()
         mode_args = (sc.mode_args or {}).get(mode_key) or (sc.mode_args or {}).get("legacy") or []

@@ -1,0 +1,24 @@
+# Separate laptops, over the air: settings both stations share; the station profiles
+# (station_gnb_usrp.yaml, station_ue_usrp.yaml) extend this file. Radio arguments: demo_usrp.yaml (same-laptop demo).
+#
+#   STATION_KEY  shared key of the link between the stations (same value on both laptops)
+#   UE_STATION   the UE laptop's address as the gNB laptop reaches it: Tailscale name or IP, LAN IP
+#   GNB_STATION  RF-sim only: the gNB laptop's address for the UE's RF simulator connection
+# Set them in the environment (e.g. UE_STATION=en4202546ul) or edit the defaults below.
+extends: demo_usrp.yaml
+
+vars:
+  STATION_KEY: "ai-csi-feedback-demo"
+  UE_STATION: "en4202546ul"
+  GNB_STATION: "127.0.0.1"
+
+station:
+  ue_host: ${UE_STATION}     # gNB station: where the UE station listens
+  port: 9200
+  key: ${STATION_KEY}
+  timeout_s: 3.0
+  switch_lead_frames: 100   # Legacy / AI switch 1 s after the click: covers a relayed (Tailscale) link
+  test_delay_s: 0.0         # testing only: extra one-way delay per link message
+
+features:
+  live_mode_lead_frames: 15 # gNB-only decoder swap (Same <-> Cross): no link involved
