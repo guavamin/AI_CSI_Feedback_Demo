@@ -252,6 +252,10 @@ class UeStation:
             raise ValueError(f"not allowed: {cmd!r}")
         reply = telnet_command(self.cfg.network.ue_host, self.cfg.network.ue_telnet_port, cmd,
                                float(args.get("timeout", 1.0)))
+        if cmd.startswith("aifb schedule ") and "aifb armed" in reply:
+            with self._lock:  # the pop-up shows the frame this UE is armed for
+                if self._popup.get("state") == "switching":
+                    self._popup["frame"] = int(cmd.split()[3])
         return {"reply": reply}
 
     def _op_scenario(self, args: dict) -> dict:

@@ -114,6 +114,15 @@ def main() -> int:
         last = lines[-1].strip() if lines else ""
         samples = int(last.split("samples=")[1].split()[0]) if "samples=" in last else 0
         check(samples >= 2 * args.dwell, f"UE station samples (its own throughput / decode failures / SINR): {samples}")
+        # the UE crashes (as with a USRP overflow abort): the UE station restarts it, traffic comes back by itself
+        subprocess.run(["sudo", "-n", "pkill", "-KILL", "-x", "nr-uesoftmodem"], capture_output=True)
+        t0 = time.monotonic()
+        check(wait_for(lambda: demo.view().radio.traffic_stage != "running", 15, 0.2), "UE killed: traffic stops")
+        ok = wait_for(lambda: demo.view().radio.traffic_stage == "running", 120, 0.5)
+        check(ok, f"UE restarted by the UE station, traffic running again after {time.monotonic() - t0:.0f} s")
+        n0 = len(demo.view().samples)
+        time.sleep(10)
+        check(len(demo.view().samples) > n0, "samples continue after the recovery")
         # Stop takes down both sides
         demo.stop_system()
         check(wait_for(lambda: not st.ue.get("running") and not st.launcher.is_running("gnb"), 30),

@@ -1,0 +1,10 @@
+"""The gNB station (live), from the repository root on the gNB laptop, as your normal user:
+
+    .venv/bin/python -m separate_laptops.gnb_station.app                                     # over the air
+    .venv/bin/python -m separate_laptops.gnb_station.app --profile configs/station_gnb_rfsim.yaml  # RF simulator
+"""
+
+from separate_laptops.station_ui import live_main
+
+if __name__ == "__main__":
+    live_main("gnb")

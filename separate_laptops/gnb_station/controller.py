@@ -268,7 +268,7 @@ class GnbStationController:
             try:
                 self.iperf.start("client", ue_ip=ue_ip)
                 self._client_ip = ue_ip
-                self.on_event("ok", f"Traffic running to UE {ue_ip}")
+                log.info("traffic sender started to UE %s", ue_ip)  # DemoController reports "Traffic running"
             except Exception as exc:  # noqa: BLE001
                 self.on_event("fail", f"Traffic sender failed: {exc}")
         elif not ready and self.iperf.is_running("client"):
