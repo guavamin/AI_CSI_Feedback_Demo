@@ -335,8 +335,11 @@ def diagram_scale(DW, DH):
     return min(DW / DIA_DESIGN_W, DH / DIA_DESIGN_H)
 
 
-def draw_diagram(act, DW, DH, ch, f_draw):
-    """One diagram per scenario, drawn in design units, uniformly scaled and centred in DW x DH."""
+def draw_diagram(act, DW, DH, ch, f_draw, focus=None, bits=False):
+    """One diagram per scenario, drawn in design units, uniformly scaled and centred in DW x DH.
+
+    focus "ue" / "gnb" (separate-laptop stations): the other node panel is dimmed and this one is tagged
+    THIS LAPTOP. bits: the over-the-air label gives the feedback size per report."""
     key = act["key"]
     s_ = diagram_scale(DW, DH)
     width = UE_W + OTA_GAP + GNB_W[key]
@@ -400,7 +403,7 @@ def draw_diagram(act, DW, DH, ch, f_draw):
             white_box(25, 205, "MEASURED\nCHANNEL")
             arrow(207, 240)
             grey_box(245, 470, "CODEBOOK\nSEARCH")
-            ota_arc(473, G + 32, GRAY, "OTA", "PMI · BEAM INDEX")
+            ota_arc(473, G + 32, GRAY, "OTA", "2-BIT BEAM INDEX + CQI" if bits else "PMI · BEAM INDEX")
             grey_box(G + 35, G + 265, "CODEBOOK\nLOOKUP")
             arrow(G + 267, G + 310)
             white_box(G + 315, G + 530, "PRECODING", edge=BLUE_2)
@@ -413,12 +416,12 @@ def draw_diagram(act, DW, DH, ch, f_draw):
             arrow(207, 240)
             trapezoid(245, 470, "enc", V1, V1_LIGHT, "AI\nENCODER")
             if key == "same":
-                ota_arc(473, G + 32, BLUE, "OTA", "CHANNEL FEEDBACK")
+                ota_arc(473, G + 32, BLUE, "OTA", "48-BIT LATENT + CQI" if bits else "CHANNEL FEEDBACK")
                 trapezoid(G + 35, G + 270, "dec", V1, V1_LIGHT, "AI\nDECODER")
                 arrow(G + 272, G + 315)
                 rx0, rx1 = G + 320, G + 530
             else:
-                ota_arc(473, G + 27, BLUE, "OTA", "CHANNEL FEEDBACK")
+                ota_arc(473, G + 27, BLUE, "OTA", "48-BIT LATENT + CQI" if bits else "CHANNEL FEEDBACK")
                 dpg.draw_rectangle(P(G + 30, 112), P(G + 182, 234), color=rgb(ORANGE), fill=rgb(ORANGE), rounding=14 * s_,
                                    thickness=3)
                 dpg.draw_rectangle(P(G + 38, 120), P(G + 174, 226), color=rgb(PALE), fill=rgb(ORANGE), rounding=10 * s_,
@@ -431,6 +434,12 @@ def draw_diagram(act, DW, DH, ch, f_draw):
             white_box(rx0, rx1, "RECONSTRUCTED\nCHANNEL", edge="#7E8794")
             arrow(rx1 + 2, rx1 + 34)
             white_box(rx1 + 38, G + GNB_W[key] - 30, "PRECODING", edge=BLUE_2)
+        if focus in ("ue", "gnb"):
+            other = (G, G + GNB_W[key]) if focus == "ue" else (0, UE_W)
+            mine = (0, UE_W) if focus == "ue" else (G, G + GNB_W[key])
+            dpg.draw_rectangle(P(other[0] - 4, 4), P(other[1] + 4, 296), color=rgb(BG, 0), fill=rgb(BG, 175),
+                               rounding=22 * s_)
+            label(mine[1] - 28 - 11 * 15 * 1.1 * 0.56, 34, "THIS LAPTOP", ORANGE, 15, center=False)  # right-aligned
 
 
 # ---------------------------------------------------------------------------- channel visualization tab

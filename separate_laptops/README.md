@@ -1,24 +1,26 @@
 # Separate laptops: gNB station + UE station
 
-No cable between the two sides: the radio link is over the air, and the UE's USRP runs on its own clock
-(untested so far, see "Open items"). Each laptop runs its own GUI.
+No cable between the two sides: the radio link is over the air, both USRPs take 10 MHz / PPS from GPS, and
+the two laptops talk over Wi-Fi (control path only). Each laptop runs its own GUI, in the booth GUI's style,
+and shows only what its own side can know.
 
 | | gNB station (`gnb_station/`) | UE station (`ue_station/`) |
 |---|---|---|
-| Runs | core network, gNB, downlink stream (sender) | UE, traffic receiver |
-| Steps | 1 core network, 2 gNB, 3 UE attached, 4 find UE IP (from the core), 5 check UE receiver, 6 downlink stream, 7 feedback scenario | 1 UE (USRP, sync + CFO, attach), 2 UE IP, 3 receiver, 4 feedback mode (set by the gNB) |
-| Shows | throughput / MCS / BLER (live + CDF), CQI, UL SNR, feedback received on PUCCH | ground-truth channel, reconstruction by replaying the gNB's decoder, cosine CDF, feedback sent, RX throughput, RSRP / SINR / CFO |
+| Runs | core network, gNB, downlink traffic sender | UE, traffic receiver |
+| Bring-up | Core, gNB, USRP, UE attached, Wi-Fi link to the UE station, Traffic | USRP, Sync, Attach, IP, Receiver, Wi-Fi link to the gNB station |
+| Scenario | chosen here (click a card or 1 / 2 / 3); the request goes to the UE station over Wi-Fi, both switch at the same frame | follows the gNB station (pop-up when a request arrives) |
+| Live plots | downlink throughput, MCS, BLER (time + CDF) | received throughput, decode failures, SINR (time + CDF) |
+| Channel tab | channel reconstructed from the feedback it received (AI only), the beam it transmits per 4-RB group, both over recent reports | channel the UE measures (all four RX-TX links), its best beam per 4-RB group (Legacy: plus the PMI it reports), both over recent reports |
 
-Scenario changes are made on the gNB station only. The gNB station sends the request to the UE station
-through the 5G link itself (the UE's IP is known from step 4); both switch at the same radio frame and both
-show a pop-up. If the UE station does not confirm, the gNB does not switch. Both stations keep a
-boot-style event log for debugging.
+The UE's "best beam" and the gNB's "transmitted beam" use the same axes: side by side, they show how close
+the feedback gets the gNB to the ideal beam (Legacy: one codebook beam for the whole band; AI: one per group).
 
-Open items (not implemented): the station-to-station messages, UE on its internal clock (test with
-`--clock-source 0 --time-source 0`), lead time for the scheduled switch over the 5G link, finding the UE IP
-from the core network logs.
+Mockups (recorded OTA data, simulated bring-up, nothing talks to OAI), from the repository root:
 
-Mockups (replay of OTA data, not wired to OAI), from the repository root:
+    .venv/bin/python -m separate_laptops.gnb_station.mockup     # click Start, click a scenario card (or 1/2/3)
+    .venv/bin/python -m separate_laptops.ue_station.mockup      # click Start; 1/2/3 simulate a gNB-station request
 
-    .venv/bin/python -m separate_laptops.gnb_station.mockup     # keys 1/2/3: scenario + pop-up, Esc, F11
-    .venv/bin/python -m separate_laptops.ue_station.mockup
+Esc hides a pop-up, F11 toggles fullscreen, `--no-history` starts the plots empty instead of with 3 recorded
+minutes. Both mockups are built on `same_laptop/app.py` (header, cards, plots, themes).
+
+Not implemented yet: the station-to-station protocol over Wi-Fi, the real station apps (OAI wiring per side).

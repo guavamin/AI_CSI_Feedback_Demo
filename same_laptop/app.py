@@ -40,11 +40,12 @@ LINKS = ((0, 0), (0, 1), (1, 0), (1, 1))
 SUBC = "Subcarrier (occupied, 612)"
 HEAT_COLS = 153  # heat maps average 4 subcarriers per cell: ImPlot draws every cell each frame
 KEYS = [s["key"] for s in SCENARIOS]
-METRICS = (  # name, sample attribute, time-plot y label, CDF x label
-    ("THROUGHPUT", "tput_mbps", "Mbps", "Throughput (Mbps)"),
-    ("MCS", "mcs", "MCS", "MCS index"),
-    ("BLER", "bler", "BLER", "BLER"),
+METRICS = (  # name, sample attribute, time-plot y label, CDF x label, axis kind (rate | mcs | ratio | db)
+    ("THROUGHPUT", "tput_mbps", "Mbps", "Throughput (Mbps)", "rate"),
+    ("MCS", "mcs", "MCS", "MCS index", "mcs"),
+    ("BLER", "bler", "BLER", "BLER", "ratio"),
 )
+CDF_PAD = {"rate": 0.5, "mcs": 0.5, "ratio": 0.005, "db": 0.5}
 RED = "#E5534B"
 
 
@@ -272,11 +273,12 @@ class App:
             self.text("", "small", DIM, wrap=LEFT_W - 40, tag="event_line")
             dpg.add_drawlist(width=LEFT_W - 40, height=24, tag="dots")
 
-    def build_plots(self, RIGHT_W, PLOT_H, GAP):
+    def build_plots(self, RIGHT_W, PLOT_H, GAP, metrics=METRICS):
+        self.metrics = metrics
         col_w = (RIGHT_W - GAP) // 2
         ph = (PLOT_H - 2 * 10 + 10) // 3
         plot_h = ph - 2 * 8 - 24
-        for k, (name, attr, lab, lab_cdf) in enumerate(METRICS):
+        for k, (name, attr, lab, lab_cdf, _kind) in enumerate(metrics):
             with dpg.group(horizontal=True, horizontal_spacing=GAP):
                 with dpg.child_window(width=col_w, height=ph, border=True, no_scrollbar=True) as pc:
                     dpg.bind_item_theme(pc, self.child_theme(rgb(SURFACE), rgb(LINE), pad=(14, 8), spacing=(6, 2)))
@@ -468,18 +470,22 @@ class App:
                 start = i
         segs = segs[-POOL:]
         x_lo, x_hi = max(0.0, t_end - WINDOW_S), max(t_end, WINDOW_S)
-        for name, attr, lab, lab_cdf in METRICS:
+        for name, attr, lab, lab_cdf, kind in self.metrics:
             y = np.array([getattr(s, attr) for s in win], dtype=float)
             finite = y[np.isfinite(y)]
-            if attr == "tput_mbps":
+            y_lo = 0.0
+            if kind == "rate":
                 y_hi = max(10.0, float(np.ceil((finite.max() if finite.size else 10) * 1.15 / 5) * 5))
-            elif attr == "mcs":
+            elif kind == "mcs":
                 y_hi = 30.0 if (finite.size and finite.max() > 15) else 16.0
+            elif kind == "db":  # e.g. SINR: the band around the data, not from 0
+                y_lo = float(np.floor((finite.min() if finite.size else 0) / 5) * 5 - 5)
+                y_hi = float(np.ceil((finite.max() if finite.size else 30) / 5) * 5 + 5)
             else:
                 y_hi = max(0.25, float(np.ceil((finite.max() if finite.size else 0.25) * 1.2 * 20) / 20))
             dpg.set_axis_limits(self.t[f"{attr}_x"], x_lo, x_hi)
-            dpg.set_axis_limits(self.t[f"{attr}_y"], 0.0, y_hi)
-            yc = np.where(np.isfinite(y), y, 0.0)
+            dpg.set_axis_limits(self.t[f"{attr}_y"], y_lo, y_hi)
+            yc = np.where(np.isfinite(y), y, y_lo)
             for j in range(POOL):
                 shade, line, raw = self.t[f"{attr}_shade"][j], self.t[f"{attr}_line"][j], self.t[f"{attr}_raw"][j]
                 if j < len(segs):
@@ -488,7 +494,7 @@ class App:
                     x0 = (t[a - 1] + t[a]) / 2 if a > 0 else t[a]
                     x1 = (t[b - 1] + t[b]) / 2 if b < len(t) else t[b - 1]
                     sx = [x0] + xs + [x1]
-                    dpg.set_value(shade, [sx, [y_hi] * len(sx), [0.0] * len(sx), [], []])
+                    dpg.set_value(shade, [sx, [y_hi] * len(sx), [y_lo] * len(sx), [], []])
                     dpg.bind_item_theme(shade, self.res["shade"][key])
                     dpg.set_value(line, [xs, roll(yc[a:b].tolist())])
                     dpg.bind_item_theme(line, self.res["line"][key])
@@ -510,8 +516,8 @@ class App:
                 else:
                     dpg.set_value(self.t[f"{attr}_cdf_{key}"], [[], []])
             if np.isfinite(lo):
-                pad = max((hi - lo) * 0.05, {"tput_mbps": 0.5, "mcs": 0.5, "bler": 0.005}[attr])
-                x_min = lo - pad if lo <= 0 else max(0.0, lo - pad)  # a curve at 0 stays visible
+                pad = max((hi - lo) * 0.05, CDF_PAD[kind])
+                x_min = lo - pad if lo <= 0 or kind == "db" else max(0.0, lo - pad)  # a curve at 0 stays visible
                 dpg.set_axis_limits(self.t[f"{attr}_cx"], x_min, hi + pad)
 
     def refresh_channel(self, view: DemoView, rv: ReplayView):
