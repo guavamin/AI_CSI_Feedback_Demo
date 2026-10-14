@@ -24,7 +24,7 @@ import dearpygui.dearpygui as dpg
 import numpy as np
 
 from common.station_data import ChannelView
-from common.style import BG, DIM, GREEN, LINE, MUTED, ORANGE, SCENARIO, SCENARIOS, SURFACE, TEXT, rgb
+from common.style import BG, DIM, GREEN, LINE, MUTED, ORANGE, SCENARIO, SCENARIOS, SURFACE, TEXT, rgb, viewport_icons
 from same_laptop.app import HEAT_COLS, KEYS, LINKS, METRICS, RED, SUBC, App, tcol
 from same_laptop.mockup import DIA_DESIGN_H, diagram_scale, draw_diagram
 
@@ -378,7 +378,8 @@ class StationUI(App):
 
     def run(self):
         dpg.create_context()
-        dpg.create_viewport(title=f"{self.st['title'].title()} · Interoperable AI-Native CSI Feedback", width=1920, height=1080)
+        dpg.create_viewport(title=f"{self.st['title'].title()} · Interoperable AI-Native CSI Feedback", width=1920, height=1080,
+                        **viewport_icons())
         dpg.setup_dearpygui()
         dpg.show_viewport()
         dpg.toggle_viewport_fullscreen() if self.args.fullscreen else dpg.maximize_viewport()

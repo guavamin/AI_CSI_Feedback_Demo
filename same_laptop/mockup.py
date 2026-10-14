@@ -26,7 +26,7 @@ from contextlib import contextmanager
 import dearpygui.dearpygui as dpg
 import numpy as np
 
-from common.style import (BG, BLUE, BLUE_2, BOX_EDGE, DIM, FONTS, GRAY, GREEN, INK, LINE, LOGO_FILES, LOGOS,
+from common.style import (viewport_icons, BG, BLUE, BLUE_2, BOX_EDGE, DIM, FONTS, GRAY, GREEN, INK, LINE, LOGO_FILES, LOGOS,
                           MOCKUP_DATA, MUTED, ORANGE, PALE, SCENARIOS, SURFACE, TEXT, TITLE, V1, V1_LIGHT, V2,
                           V2_LIGHT, mix, rgb, roll)
 
@@ -555,7 +555,8 @@ def main() -> None:
     ap.add_argument("--fullscreen", action="store_true")
     args = ap.parse_args()
     dpg.create_context()
-    dpg.create_viewport(title="Interoperable AI-Native CSI Feedback · Live OAI prototype", width=1920, height=1080)
+    dpg.create_viewport(title="Interoperable AI-Native CSI Feedback · Live OAI prototype", width=1920, height=1080,
+                        **viewport_icons())
     dpg.setup_dearpygui()
     dpg.show_viewport()
     if args.fullscreen:

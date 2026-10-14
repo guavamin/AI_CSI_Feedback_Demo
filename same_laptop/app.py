@@ -29,7 +29,7 @@ import numpy as np
 from common.demo_control import DemoController, DemoView
 from common.oai.config import load_config
 from common.replay.worker import ReplayView, ReplayWorker, engine_from_config
-from common.style import (BG, BLUE, DIM, FONTS, GREEN, INK, LINE, LOGO_FILES, LOGOS, MUTED, ORANGE, PALE, REPO,
+from common.style import (viewport_icons, BG, BLUE, DIM, FONTS, GREEN, INK, LINE, LOGO_FILES, LOGOS, MUTED, ORANGE, PALE, REPO,
                           SCENARIO, SCENARIOS, SURFACE, TEXT, TITLE, V1_LIGHT, mix, rgb, roll)
 from same_laptop.mockup import DIA_DESIGN_H, diagram_scale, draw_diagram
 
@@ -592,7 +592,8 @@ class App:
                             handlers=[logging.StreamHandler(), logging.FileHandler(log_file)])
         log.info("profile %s, GUI log %s", self.args.profile, log_file)
         dpg.create_context()
-        dpg.create_viewport(title="Interoperable AI-Native CSI Feedback · Live OAI prototype", width=1920, height=1080)
+        dpg.create_viewport(title="Interoperable AI-Native CSI Feedback · Live OAI prototype", width=1920, height=1080,
+                        **viewport_icons())
         dpg.setup_dearpygui()
         dpg.show_viewport()
         dpg.toggle_viewport_fullscreen() if self.args.fullscreen else dpg.maximize_viewport()

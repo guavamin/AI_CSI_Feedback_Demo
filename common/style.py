@@ -7,6 +7,17 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 FONTS = REPO / "assets/fonts"
 LOGOS = REPO / "assets/logos"
+ICON_DIR = REPO / "assets/icon"  # window / taskbar icon, built by tools/make_app_icon.py
+ICON_STYLE = "light"  # light (ivory tile, as the GUI header) | dark (the GUI's background)
+
+
+def viewport_icons() -> dict:
+    """create_viewport() keywords for the window / taskbar icon (empty if the files are missing)."""
+    tag = "" if ICON_STYLE == "light" else "_dark"
+    small, large = ICON_DIR / f"app_icon{tag}_64.png", ICON_DIR / f"app_icon{tag}.png"
+    if not (small.exists() and large.exists()):
+        return {}
+    return {"small_icon": str(small), "large_icon": str(large)}
 MOCKUP_DATA = REPO / "data/mockups"
 
 # Trailer palette (brooklyn_6g_trailer: render_trailer.py, render_story_reference*.py)
