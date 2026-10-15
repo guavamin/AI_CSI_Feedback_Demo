@@ -109,6 +109,14 @@ EOF
     echo "ok: $rule ($GUI_USER starts and stops the softmodems without a password)"
 fi
 
+if command -v ufw >/dev/null && ufw status | grep -q "Status: active"; then
+    # an active firewall drops the downlink traffic arriving on the UE's 5G interface (UE station) and the
+    # station link if it does not come over Tailscale; both rules are harmless on the gNB laptop
+    ufw allow in on oaitun_ue1 >/dev/null && echo "ufw: allowed incoming traffic on the UE's 5G interface (oaitun_ue1)"
+    ufw status | grep -q "tailscale0" || echo "ufw: the station link (TCP 9200) must be allowed: 'ufw allow in on tailscale0'" \
+        "for Tailscale, or 'ufw allow 9200/tcp' on a local network"
+fi
+
 step "5/5 GUI Python environment"
 cd "$REPO"
 as_user ./install.sh

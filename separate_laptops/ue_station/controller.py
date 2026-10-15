@@ -75,6 +75,7 @@ class UeView:
     events: list[Event]
     session_t0: float | None = None
     popup: dict = field(default_factory=dict)  # the latest scenario notice from the gNB station
+    rx_silent_s: float = 0.0  # receiver listening, but no downlink data for this long (0: data arriving / n.a.)
 
 
 class UeStation:
@@ -103,6 +104,8 @@ class UeStation:
         self._ip_lost_at = 0.0
         self._started_at = 0.0
         self._last_exit = 0.0
+        self._server_since = 0.0  # time.monotonic() the receiver started on the current IP
+        self._rx_last = 0.0  # time.monotonic() downlink data last arrived at the receiver
         self._scenario = "legacy"
         self._popup: dict = {}
         self._timeline: list[tuple[float, str | None]] = [(0.0, None)]
@@ -148,6 +151,8 @@ class UeStation:
             self._desired = True
             self._samples.clear()
             self._session_t0 = None
+            self._started_at, self._last_exit = 0.0, 0.0  # a new session: no "UE exited" for the last one
+            self._server_since, self._rx_last = 0.0, 0.0
         self.stats.reset()
         self.channel.clear()
         self.event("busy", "Starting the UE" + (" (requested by the gNB station)" if source == "link" else ""))
@@ -200,6 +205,7 @@ class UeStation:
                 self._stop_server()
                 self.iperf.start("server", ue_ip=ip)
                 self._server_ip = ip
+                self._server_since = time.monotonic()
                 self.event("ok", f"Traffic receiver listening on {ip}")
             return
         with self._lock:
@@ -303,6 +309,8 @@ class UeStation:
             iperf_log = self.iperf.log_dir / "iperf_server.log"
             st = self.stats.poll(self.launcher.stdout_path("ue"), iperf_log)
             receiving = self.iperf.is_running("server") and st.tput_mbps == st.tput_mbps and st.tput_mbps > 0.1
+            if receiving:
+                self._rx_last = time.monotonic()
             if not (self._desired and receiving):
                 traffic_since = None
                 continue
@@ -317,6 +325,12 @@ class UeStation:
                 if self._session_t0 is None:
                     self._session_t0 = now - self._t0
                 self._samples.append(UeSample(now - self._t0, scen, st.tput_mbps, st.fail_rate, st.sinr_db, st.rsrp_dbm))
+
+    def _rx_silent_s(self, server_running: bool) -> float:
+        if not server_running or not self._server_since:
+            return 0.0
+        silent = time.monotonic() - max(self._server_since, self._rx_last)
+        return silent if silent > 10.0 else 0.0
 
     def status(self) -> dict:
         """What the gNB station polls."""
@@ -350,6 +364,7 @@ class UeStation:
         with self._lock:
             return UeView(running=s["running"], desired=s["desired"], stage=s["stage"], stage_label=s["stage_label"],
                           ue_ip=s["ue_ip"], server_running=s["server_running"], link_up=link_up, peer=self.server.peer,
+                          rx_silent_s=self._rx_silent_s(s["server_running"]),
                           scenario=self._scenario, steps=self.steps(s, link_up), samples=list(self._samples),
                           events=list(self._events), session_t0=self._session_t0, popup=dict(self._popup))
 

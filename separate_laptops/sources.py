@@ -353,6 +353,10 @@ class UeSource:
     def status_line(self):
         v = self._view()
         link = f"linked to the gNB station ({v.peer})" if v.link_up else "gNB station not connected"
+        if v.server_running and v.rx_silent_s:
+            return (f"Receiver listening on {v.ue_ip}, but no downlink data for {v.rx_silent_s:.0f} s: is traffic "
+                    f"running on the gNB station? A firewall on this laptop (ufw) blocks it unless "
+                    f"'ufw allow in on oaitun_ue1'")
         if v.server_running:
             return f"Receiving downlink  ·  IP {v.ue_ip}  ·  {link}"
         if v.desired:
