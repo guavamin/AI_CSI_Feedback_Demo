@@ -38,6 +38,7 @@ as_user() { sudo -u "$GUI_USER" -H "$@"; }
 . /etc/os-release
 echo "Ubuntu $VERSION_ID, GUI user $GUI_USER, OAI in $OAI_DIR"
 export DEBIAN_FRONTEND=noninteractive
+export GIT_PAGER=cat PAGER=cat  # OAI's installer prints git diffs / logs: never stop in a pager
 
 step "1/5 system packages"
 apt-get update -q
