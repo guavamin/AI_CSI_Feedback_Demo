@@ -100,7 +100,8 @@ EOF
     chmod 440 "$rule.tmp"
     visudo -cf "$rule.tmp" && mv "$rule.tmp" "$rule"
     # a real test, not a listing: an allowed, harmless command (no such process group) must not ask for a password
-    if sudo -u "$GUI_USER" sudo -n /usr/bin/kill -TERM -2147483 2>&1 | grep -q "password is required"; then
+    # ("--" matters: procps kill reads "-TERM -<n>" as its own group 0)
+    if sudo -u "$GUI_USER" sudo -n /usr/bin/kill -TERM -- -2147483 2>&1 | grep -q "password is required"; then
         echo "sudo still asks $GUI_USER for a password: a later rule overrides $rule:"
         sudo -u "$GUI_USER" sudo -n -l
         exit 1

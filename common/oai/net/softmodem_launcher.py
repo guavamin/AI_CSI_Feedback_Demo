@@ -221,7 +221,7 @@ class SoftmodemLauncher:
         except PermissionError:
             # Root-owned process group: ask sudo to signal
             subprocess.run(
-                ["sudo", "-n", "kill", "-TERM", f"-{os.getpgid(proc.pid)}"],
+                ["sudo", "-n", "kill", "-TERM", "--", f"-{os.getpgid(proc.pid)}"],
                 check=False,
                 capture_output=True,
             )
@@ -239,7 +239,7 @@ class SoftmodemLauncher:
                 pass
             except PermissionError:
                 subprocess.run(
-                    ["sudo", "-n", "kill", "-KILL", f"-{os.getpgid(proc.pid)}"],
+                    ["sudo", "-n", "kill", "-KILL", "--", f"-{os.getpgid(proc.pid)}"],
                     check=False,
                     capture_output=True,
                 )
