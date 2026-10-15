@@ -86,7 +86,10 @@ rm -rf "$T"
 
 step "4/5 passwordless sudo for $GUI_USER (softmodems and their stop commands only)"
 if [[ ${SKIP_SUDOERS:-0} != 1 ]]; then
-    rule=/etc/sudoers.d/pyoaicsinet
+    # sudo applies the LAST matching rule: this file must sort after the others (an admin rule such as
+    # "user ALL=(ALL) ALL" in a later file would ask for a password again)
+    rule=/etc/sudoers.d/zz-pyoaicsinet
+    rm -f /etc/sudoers.d/pyoaicsinet  # earlier name of this rule
     cat >"$rule.tmp" <<EOF
 # ai-csi-feedback-demo: the GUI starts and stops the OAI softmodems without a password
 $GUI_USER ALL=(root) NOPASSWD: $BUILD/nr-softmodem, $BUILD/nr-uesoftmodem, \\
@@ -96,7 +99,13 @@ $GUI_USER ALL=(root) NOPASSWD: $BUILD/nr-softmodem, $BUILD/nr-uesoftmodem, \\
 EOF
     chmod 440 "$rule.tmp"
     visudo -cf "$rule.tmp" && mv "$rule.tmp" "$rule"
-    sudo -u "$GUI_USER" sudo -n -l | grep -q nr-uesoftmodem && echo "ok: $rule"
+    # a real test, not a listing: an allowed, harmless command (no such process group) must not ask for a password
+    if sudo -u "$GUI_USER" sudo -n /usr/bin/kill -TERM -2147483 2>&1 | grep -q "password is required"; then
+        echo "sudo still asks $GUI_USER for a password: a later rule overrides $rule:"
+        sudo -u "$GUI_USER" sudo -n -l
+        exit 1
+    fi
+    echo "ok: $rule ($GUI_USER starts and stops the softmodems without a password)"
 fi
 
 step "5/5 GUI Python environment"
