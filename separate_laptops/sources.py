@@ -49,7 +49,7 @@ class MockSource:
     def __init__(self, station: str, active: str = "legacy", history: bool = True):
         self.station, self.can_choose = station, station == "gnb"
         self.history = history
-        self.clock = "external"
+        self.clock = "internal"
         self._key = active
         self.runs = {s["key"]: [r for r in csv.DictReader(open(MOCKUP_DATA / "runs" / s["run"] / "metrics.csv"))
                                 if float(r["dl_mbps"]) > 0.5] for s in SCENARIOS}
@@ -191,7 +191,8 @@ class MockSource:
 
     def set_clock(self, value):
         self.clock = value
-        self.event("info", f"USRP reference: {value} (clock / time source {1 if value == 'external' else 0} at the next start)")
+        self.event("info", f"USRP clock reference: {value} (clock / time source {1 if value == 'external' else 0} "
+                           f"at the next start)")
 
     def shutdown(self):
         pass
@@ -208,9 +209,11 @@ class GnbSource:
 
         self.cfg = cfg
         self.ota = not cfg.oai.rfsim
-        self.clock = "external"  # the gNB config file's RUs section (clock_src / time_src)
+        self.clock = "internal"  # USRP clock reference until the switch is used
         self.demo = GnbDemo(cfg)
         self.st = self.demo.station
+        if self.ota:
+            self.st.launcher.clock_source = self.clock
         a, b = cfg.oai.gnb.base_args, Path(cfg.oai.build_dir)
         self.channel_worker = GnbChannelWorker(
             lambda: str(self.st.csirs_record_root), b.parents[2], b,
@@ -320,7 +323,7 @@ class GnbSource:
     def set_clock(self, value):
         """the reference of this laptop's USRP for the next start (gNB: --RUs.[0].clock_src / time_src)."""
         self.clock = self.st.launcher.clock_source = value
-        self.demo.event("info", f"USRP reference: {value} (applied at the next start)")
+        self.demo.event("info", f"USRP clock reference: {value} (applied at the next start)")
 
     def shutdown(self):
         self._stop.set()
@@ -338,9 +341,10 @@ class UeSource:
         from separate_laptops.ue_station.controller import UeStation
 
         self.ota = not cfg.oai.rfsim
-        a = cfg.oai.ue.base_args
-        self.clock = "external" if "--clock-source" in a[:-1] and a[a.index("--clock-source") + 1] == "1" else "internal"
+        self.clock = "internal"  # USRP clock reference until the switch is used
         self.ue = UeStation(cfg)
+        if self.ota:
+            self.ue.launcher.clock_source = self.clock
         self.ue.start()
         self._hidden_t = None
         self._v = self.ue.view()
@@ -430,7 +434,7 @@ class UeSource:
     def set_clock(self, value):
         """the reference of this laptop's USRP for the next start (UE: --clock-source / --time-source 0 | 1)."""
         self.clock = self.ue.launcher.clock_source = value
-        self.ue.event("info", f"USRP reference: {value} (clock / time source {1 if value == 'external' else 0} "
+        self.ue.event("info", f"USRP clock reference: {value} (clock / time source {1 if value == 'external' else 0} "
                               f"at the next UE start)")
 
     def shutdown(self):

@@ -20,7 +20,7 @@ def viewport_icons() -> dict:
     return {"small_icon": str(small), "large_icon": str(large)}
 MOCKUP_DATA = REPO / "data/mockups"
 
-# Trailer palette (brooklyn_6g_trailer: render_trailer.py, render_story_reference*.py)
+# Trailer palette (brooklyn_6g_video/trailer/scripts: render_trailer.py, render_story_reference*.py)
 BG, SURFACE, LINE = "#1B1B1A", "#20201F", "#3A3936"
 TEXT, MUTED, DIM = "#EDEBE4", "#B9B7AF", "#8E8C85"
 PALE, INK = "#FAF9F5", "#10243E"

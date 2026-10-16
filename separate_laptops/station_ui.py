@@ -75,7 +75,7 @@ class StationUI(App):
         self._steps_key = None
         self._popup_key = None
         self.metrics = METRICS if self.station == "gnb" else UE_METRICS
-        self.clock = getattr(source, "clock", "external")
+        self.clock = getattr(source, "clock", "internal")
 
     # ------------------------------------------------------------------ layout
     def build(self, W: int, H: int) -> None:

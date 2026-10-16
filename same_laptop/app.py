@@ -67,11 +67,10 @@ class App:
         self.args = args
         self.cfg = load_config(args.profile)
         self.ota = not self.cfg.oai.rfsim
-        ue_args = self.cfg.oai.ue.base_args
-        # USRP reference (SYSTEM switch): as the profile boots the UE, until the switch is used
-        self.clock = ("external" if "--clock-source" in ue_args[:-1]
-                      and ue_args[ue_args.index("--clock-source") + 1] == "1" else "internal")
+        self.clock = "internal"  # USRP clock reference (SYSTEM switch); applied to the launcher below
         self.demo = DemoController(self.cfg)
+        if self.demo.ctrl.launcher is not None and self.ota:
+            self.demo.ctrl.launcher.clock_source = self.clock  # internal unless switched
         self.session_dir = ""  # data/runs/replay/<session>: every replayed report, for later analysis
         self.replay = ReplayWorker(lambda: self.demo.view().csi_record_root, engine_from_config(self.cfg),
                                    scenario_at=self.demo.scenario_at, save_dir=lambda: self.session_dir)
@@ -299,9 +298,9 @@ class App:
         if not self.ota:
             return  # RF simulator: no USRP
         with dpg.group(horizontal=True, horizontal_spacing=6):
-            self.text("USRP reference", "small", DIM)
-            bw = (LEFT_W - 160) // 2
-            for value, label in (("internal", "Internal"), ("external", "External 10 MHz")):
+            self.text("USRP clock reference", "small", DIM)
+            bw = (LEFT_W - 210) // 2
+            for value, label in (("internal", "Internal"), ("external", "External")):
                 b = dpg.add_button(label=label, width=bw, tag=f"clk_{value}", user_data=value,
                                    callback=lambda s_, a_, u: self.state.update(clock=u))
                 dpg.bind_item_font(b, self.res["small"])
@@ -317,8 +316,8 @@ class App:
         self.clock = value
         if self.demo.ctrl.launcher is not None:
             self.demo.ctrl.launcher.clock_source = value
-        self.demo.event("info", f"USRP reference: {'external 10 MHz / PPS' if value == 'external' else 'internal'} "
-                                f"(clock and time source {1 if value == 'external' else 0} at the next start)")
+        self.demo.event("info", f"USRP clock reference: {value} (clock and time source "
+                                f"{1 if value == 'external' else 0} at the next start)")
 
     def build_plots(self, RIGHT_W, PLOT_H, GAP, metrics=METRICS):
         self.metrics = metrics
@@ -362,22 +361,25 @@ class App:
                     self.axis_font(pl)
                 with dpg.child_window(width=bar_w, height=ph, border=True, no_scrollbar=True) as pc:
                     dpg.bind_item_theme(pc, self.child_theme(rgb(SURFACE), rgb(LINE), pad=(14, 8), spacing=(6, 2)))
-                    self.text("AVERAGE " + name + "  ·  THIS SESSION", "kicker", DIM)
+                    self.text("AVERAGE " + name, "kicker", DIM)
+                    n = len(SCENARIOS)
                     with dpg.plot(width=-1, height=plot_h, no_menus=True, no_title=True, no_mouse_pos=True) as pl:
-                        xa = dpg.add_plot_axis(dpg.mvXAxis, label="", no_gridlines=True)
-                        dpg.set_axis_ticks(xa, tuple((sc["short"].split()[0], float(i)) for i, sc in enumerate(SCENARIOS)))
-                        dpg.set_axis_limits(xa, -0.6, len(SCENARIOS) - 0.4)
-                        with dpg.plot_axis(dpg.mvYAxis, label=lab) as ya:
-                            self.t[f"{attr}_by"] = ya
-                            dpg.set_axis_limits(ya, 0.0, 1.0)  # until the first samples
+                        xa = dpg.add_plot_axis(dpg.mvXAxis, label=lab)
+                        self.t[f"{attr}_by"] = xa
+                        dpg.set_axis_limits(xa, 0.0, 1.0)  # until the first samples
+                        with dpg.plot_axis(dpg.mvYAxis, label="", no_gridlines=True) as ya:
+                            # Legacy on top: row n-1-i
+                            dpg.set_axis_ticks(ya, tuple((sc["short"].split()[0], float(n - 1 - i))
+                                                         for i, sc in enumerate(SCENARIOS)))
+                            dpg.set_axis_limits(ya, -0.6, n - 0.4)
                             for i, sc in enumerate(SCENARIOS):
-                                b = dpg.add_bar_series([float(i)], [0.0], weight=0.62)
+                                b = dpg.add_bar_series([0.0], [float(n - 1 - i)], weight=0.62, horizontal=True)
                                 dpg.bind_item_theme(b, self.res["bar"][sc["key"]])
                                 self.t[f"{attr}_bar_{sc['key']}"] = b
                         for i, sc in enumerate(SCENARIOS):
                             self.t[f"{attr}_val_{sc['key']}"] = dpg.add_plot_annotation(
-                                label="-", default_value=(float(i), 0.0), offset=(0, -14), color=rgb(SURFACE, 0),
-                                clamped=False)
+                                label="-", default_value=(0.0, float(n - 1 - i)), offset=(10, 0),
+                                color=rgb(SURFACE, 0), clamped=False)
                     self.axis_font(pl)
 
     def build_channel_tab(self, act, inner_w, body_h, GAP):
@@ -602,12 +604,14 @@ class App:
             means[key] = float(v.mean()) if v.size else None
         top = max([m for m in means.values() if m is not None] + [0.0])
         lo = min([m for m in means.values() if m is not None] + [0.0])
-        hi = top * 1.5 if top > 0 else 1.0  # room for the value above the tallest bar
+        hi = top * 1.4 if top > 0 else 1.0  # room for the value at the end of the longest bar
         dpg.set_axis_limits(self.t[f"{attr}_by"], min(0.0, lo * 1.3), hi)
+        n = len(KEYS)
         for i, key in enumerate(KEYS):
             m = means[key]
-            dpg.set_value(self.t[f"{attr}_bar_{key}"], [[float(i)], [m if m is not None else 0.0]])
-            dpg.configure_item(self.t[f"{attr}_val_{key}"], default_value=(float(i), m if m is not None else 0.0),
+            v, row = (m if m is not None else 0.0), float(n - 1 - i)
+            dpg.set_value(self.t[f"{attr}_bar_{key}"], [[v], [row]])
+            dpg.configure_item(self.t[f"{attr}_val_{key}"], default_value=(v, row),
                                label=self.BAR_FMT[kind].format(m) if m is not None else "-")
 
     def refresh_channel(self, view: DemoView, rv: ReplayView):
