@@ -51,6 +51,25 @@ def _start_log_pump(proc: subprocess.Popen, out_fh, side: str) -> None:
     threading.Thread(target=pump, name=f"{side}-log", daemon=True).start()
 
 
+def with_clock_source(argv: list[str], side: str, source: str) -> list[str]:
+    """argv with the USRP clock and time reference set to source ("internal" | "external")."""
+    out = list(argv)
+    if side == "ue":
+        value = "1" if source == "external" else "0"
+        for flag in ("--clock-source", "--time-source"):
+            if flag in out[:-1]:
+                out[out.index(flag) + 1] = value
+            else:
+                out += [flag, value]
+        return out
+    for key in ("--RUs.[0].clock_src", "--RUs.[0].time_src"):
+        if key in out[:-1]:
+            out[out.index(key) + 1] = source
+        else:
+            out += [key, source]
+    return out
+
+
 class SoftmodemLauncher:
     """Owns softmodem subprocesses (optionally via sudo -n)."""
 
@@ -62,6 +81,10 @@ class SoftmodemLauncher:
         self._stdout_paths: dict[Side, Path] = {}
         # UE --csi-record-path root (H_*.bin under csi_rs_channels/)
         self.csi_record_path: Path | None = None
+        # Reference for the USRPs (GUI switch): "internal" | "external" | None = as the profile / config file says.
+        # UE: --clock-source / --time-source 0 | 1; gNB: the RUs section of its config file, overridden on the
+        # command line (--RUs.[0].clock_src / time_src). Ignored with the RF simulator.
+        self.clock_source: str | None = None
 
     def side_cfg(self, side: Side) -> SoftmodemSideConfig:
         return self.cfg.oai.gnb if side == "gnb" else self.cfg.oai.ue
@@ -107,6 +130,9 @@ class SoftmodemLauncher:
         ):
             rec = Path(self.csi_record_path).expanduser().resolve()
             argv.extend(["--csi-record-path", str(rec)])
+
+        if self.clock_source in ("internal", "external") and not oai.rfsim:
+            argv = with_clock_source(argv, side, self.clock_source)
 
         if oai.use_sudo:
             return ["sudo", "-n", *argv]

@@ -67,6 +67,10 @@ class App:
         self.args = args
         self.cfg = load_config(args.profile)
         self.ota = not self.cfg.oai.rfsim
+        ue_args = self.cfg.oai.ue.base_args
+        # USRP reference (SYSTEM switch): as the profile boots the UE, until the switch is used
+        self.clock = ("external" if "--clock-source" in ue_args[:-1]
+                      and ue_args[ue_args.index("--clock-source") + 1] == "1" else "internal")
         self.demo = DemoController(self.cfg)
         self.session_dir = ""  # data/runs/replay/<session>: every replayed report, for later analysis
         self.replay = ReplayWorker(lambda: self.demo.view().csi_record_root, engine_from_config(self.cfg),
@@ -125,6 +129,22 @@ class App:
         r["line_thin"] = {s["key"]: self.series_theme(dpg.mvLineSeries, tcol(s), 255, 1.8) for s in SCENARIOS}
         r["shade"] = {s["key"]: self.series_theme(dpg.mvShadeSeries, s["color"], 40) for s in SCENARIOS}
         r["raw"] = self.series_theme(dpg.mvLineSeries, MUTED, 100, 1.2)
+        r["bar"] = {}
+        for s in SCENARIOS:
+            with dpg.theme() as th:
+                with dpg.theme_component(dpg.mvBarSeries):
+                    dpg.add_theme_color(dpg.mvPlotCol_Fill, rgb(s["color"], 215), category=dpg.mvThemeCat_Plots)
+                    dpg.add_theme_color(dpg.mvPlotCol_Line, rgb(tcol(s)), category=dpg.mvThemeCat_Plots)
+            r["bar"][s["key"]] = th
+        for name, bg, fg in (("t_clk_on", "#26332B", GREEN), ("t_clk_off", "#242322", "#8A877F")):
+            with dpg.theme() as th:
+                for state in (True, False):
+                    with dpg.theme_component(dpg.mvButton, enabled_state=state):
+                        dpg.add_theme_color(dpg.mvThemeCol_Button, rgb(bg))
+                        dpg.add_theme_color(dpg.mvThemeCol_ButtonHovered, rgb("#34332F" if state else bg))
+                        dpg.add_theme_color(dpg.mvThemeCol_Text, rgb(fg if state or name == "t_clk_on" else "#5E5C57"))
+                        dpg.add_theme_style(dpg.mvStyleVar_FramePadding, 8, 5)
+            r[name] = th
 
     # ------------------------------------------------------------------ small helpers
     @staticmethod
@@ -257,6 +277,7 @@ class App:
                                     callback=lambda: self.state.update(stop=True))
             for b in (b1, b2):
                 dpg.bind_item_font(b, self.res["med"])
+            self.build_clock_switch(LEFT_W)
             with dpg.theme() as t_run:
                 with dpg.theme_component(dpg.mvButton, enabled_state=False):
                     dpg.add_theme_color(dpg.mvThemeCol_Button, rgb("#26332B"))
@@ -273,9 +294,36 @@ class App:
             self.text("", "small", DIM, wrap=LEFT_W - 40, tag="event_line")
             dpg.add_drawlist(width=LEFT_W - 40, height=24, tag="dots")
 
+    def build_clock_switch(self, LEFT_W):
+        """USRP clock / time reference for the next start: internal oscillator, or the external 10 MHz / PPS."""
+        if not self.ota:
+            return  # RF simulator: no USRP
+        with dpg.group(horizontal=True, horizontal_spacing=6):
+            self.text("USRP reference", "small", DIM)
+            bw = (LEFT_W - 160) // 2
+            for value, label in (("internal", "Internal"), ("external", "External 10 MHz")):
+                b = dpg.add_button(label=label, width=bw, tag=f"clk_{value}", user_data=value,
+                                   callback=lambda s_, a_, u: self.state.update(clock=u))
+                dpg.bind_item_font(b, self.res["small"])
+
+    def refresh_clock_switch(self, running: bool):
+        for value in ("internal", "external"):
+            tag = f"clk_{value}"
+            if dpg.does_item_exist(tag):
+                dpg.configure_item(tag, enabled=not running)  # applied when the softmodems start
+                dpg.bind_item_theme(tag, self.res["t_clk_on" if value == self.clock else "t_clk_off"])
+
+    def apply_clock(self, value: str):
+        self.clock = value
+        if self.demo.ctrl.launcher is not None:
+            self.demo.ctrl.launcher.clock_source = value
+        self.demo.event("info", f"USRP reference: {'external 10 MHz / PPS' if value == 'external' else 'internal'} "
+                                f"(clock and time source {1 if value == 'external' else 0} at the next start)")
+
     def build_plots(self, RIGHT_W, PLOT_H, GAP, metrics=METRICS):
         self.metrics = metrics
-        col_w = (RIGHT_W - GAP) // 2
+        col_w = int((RIGHT_W - GAP) // 2 * 0.7)  # the curve plots, 30% narrower than one half each
+        bar_w = RIGHT_W - 2 * col_w - 2 * GAP  # what is left: per-scenario averages
         ph = (PLOT_H - 2 * 10 + 10) // 3
         plot_h = ph - 2 * 8 - 24
         for k, (name, attr, lab, lab_cdf, _kind) in enumerate(metrics):
@@ -311,6 +359,25 @@ class App:
                                 s = dpg.add_line_series([], [])
                                 dpg.bind_item_theme(s, self.res["line"][sc["key"]])
                                 self.t[f"{attr}_cdf_{sc['key']}"] = s
+                    self.axis_font(pl)
+                with dpg.child_window(width=bar_w, height=ph, border=True, no_scrollbar=True) as pc:
+                    dpg.bind_item_theme(pc, self.child_theme(rgb(SURFACE), rgb(LINE), pad=(14, 8), spacing=(6, 2)))
+                    self.text("AVERAGE " + name + "  ·  THIS SESSION", "kicker", DIM)
+                    with dpg.plot(width=-1, height=plot_h, no_menus=True, no_title=True, no_mouse_pos=True) as pl:
+                        xa = dpg.add_plot_axis(dpg.mvXAxis, label="", no_gridlines=True)
+                        dpg.set_axis_ticks(xa, tuple((sc["short"].split()[0], float(i)) for i, sc in enumerate(SCENARIOS)))
+                        dpg.set_axis_limits(xa, -0.6, len(SCENARIOS) - 0.4)
+                        with dpg.plot_axis(dpg.mvYAxis, label=lab) as ya:
+                            self.t[f"{attr}_by"] = ya
+                            dpg.set_axis_limits(ya, 0.0, 1.0)  # until the first samples
+                            for i, sc in enumerate(SCENARIOS):
+                                b = dpg.add_bar_series([float(i)], [0.0], weight=0.62)
+                                dpg.bind_item_theme(b, self.res["bar"][sc["key"]])
+                                self.t[f"{attr}_bar_{sc['key']}"] = b
+                        for i, sc in enumerate(SCENARIOS):
+                            self.t[f"{attr}_val_{sc['key']}"] = dpg.add_plot_annotation(
+                                label="-", default_value=(float(i), 0.0), offset=(0, -14), color=rgb(SURFACE, 0),
+                                clamped=False)
                     self.axis_font(pl)
 
     def build_channel_tab(self, act, inner_w, body_h, GAP):
@@ -424,6 +491,7 @@ class App:
                                 thickness=2, parent="stepper")
                 dpg.draw_text((x - len(name) * 4, 34), name, color=rgb(MUTED if st != "idle" else DIM), size=15, parent="stepper")
         running = r.gnb_running or r.ue_running
+        self.refresh_clock_switch(running)
         dpg.configure_item("btn_start", label="•  Running" if running else "Start system", enabled=not running)
         dpg.bind_item_theme("btn_start", self.res["t_running"] if running else self.res["t_off"])
         dpg.configure_item("btn_stop", enabled=running)
@@ -515,10 +583,32 @@ class App:
                     dpg.set_value(self.t[f"{attr}_cdf_{key}"], [v[idx].tolist(), ((idx + 1) / v.size).tolist()])
                 else:
                     dpg.set_value(self.t[f"{attr}_cdf_{key}"], [[], []])
+            self.refresh_bars(view, attr, kind)
             if np.isfinite(lo):
                 pad = max((hi - lo) * 0.05, CDF_PAD[kind])
                 x_min = lo - pad if lo <= 0 or kind == "db" else max(0.0, lo - pad)  # a curve at 0 stays visible
                 dpg.set_axis_limits(self.t[f"{attr}_cx"], x_min, hi + pad)
+
+    BAR_FMT = {"rate": "{:.1f}", "mcs": "{:.1f}", "ratio": "{:.3f}", "db": "{:.1f}"}
+
+    def refresh_bars(self, view, attr: str, kind: str):
+        """Average of every sample of this session per scenario (the scenario on air when it was taken)."""
+        if f"{attr}_by" not in self.t:
+            return
+        means = {}
+        for key in KEYS:
+            v = np.array([getattr(s, attr) for s in view.samples if s.scenario == key], dtype=float)
+            v = v[np.isfinite(v)]
+            means[key] = float(v.mean()) if v.size else None
+        top = max([m for m in means.values() if m is not None] + [0.0])
+        lo = min([m for m in means.values() if m is not None] + [0.0])
+        hi = top * 1.5 if top > 0 else 1.0  # room for the value above the tallest bar
+        dpg.set_axis_limits(self.t[f"{attr}_by"], min(0.0, lo * 1.3), hi)
+        for i, key in enumerate(KEYS):
+            m = means[key]
+            dpg.set_value(self.t[f"{attr}_bar_{key}"], [[float(i)], [m if m is not None else 0.0]])
+            dpg.configure_item(self.t[f"{attr}_val_{key}"], default_value=(float(i), m if m is not None else 0.0),
+                               label=self.BAR_FMT[kind].format(m) if m is not None else "-")
 
     def refresh_channel(self, view: DemoView, rv: ReplayView):
         key = view.scenario
@@ -620,6 +710,8 @@ class App:
                     dpg.toggle_viewport_fullscreen()
                 if "scenario" in self.state:
                     self.demo.set_scenario(self.state.pop("scenario"))
+                if "clock" in self.state:
+                    self.apply_clock(self.state.pop("clock"))
                 if self.state.pop("start", False):
                     self.replay.clear()  # a new session: new channel history and cosine CDFs
                     self.session_dir = str(REPO / "data/runs/replay" / time.strftime("%Y%m%d_%H%M%S"))

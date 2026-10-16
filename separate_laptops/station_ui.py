@@ -75,6 +75,7 @@ class StationUI(App):
         self._steps_key = None
         self._popup_key = None
         self.metrics = METRICS if self.station == "gnb" else UE_METRICS
+        self.clock = getattr(source, "clock", "external")
 
     # ------------------------------------------------------------------ layout
     def build(self, W: int, H: int) -> None:
@@ -102,8 +103,7 @@ class StationUI(App):
                             dpg.add_spacer(height=4)
                             self.text("CSI FEEDBACK SCENARIOS", "kicker", DIM)
                             for sc in SCENARIOS:
-                                self.build_card(sc, sc["key"] == key, view, LEFT_W, 92)
-                                dpg.add_spacer(height=1)
+                                self.build_card(sc, sc["key"] == key, view, LEFT_W, 88)
                             self.text(self.st["hint"], "small", DIM, wrap=LEFT_W - 10)
                             dpg.add_spacer(height=2)
                             self.build_station_system(LEFT_W)
@@ -139,6 +139,7 @@ class StationUI(App):
                                     callback=lambda: self.state.update(stop=True))
             for b in (b1, b2):
                 dpg.bind_item_font(b, self.res["med"])
+            self.build_clock_switch(LEFT_W)  # this laptop's USRP: internal or external 10 MHz / PPS
             with dpg.theme() as t_run:
                 with dpg.theme_component(dpg.mvButton, enabled_state=False):
                     dpg.add_theme_color(dpg.mvThemeCol_Button, rgb("#26332B"))
@@ -306,6 +307,7 @@ class StationUI(App):
                 dpg.draw_text((x - len(name) * 3.8, 34), name, color=rgb(MUTED if st != "idle" else DIM), size=14,
                               parent="stepper")
         running = self.src.running()
+        self.refresh_clock_switch(running)
         dpg.configure_item("btn_start", label="•  Running" if running else self.st["start"], enabled=not running)
         dpg.bind_item_theme("btn_start", self.res["t_running"] if running else self.res["t_off"])
         dpg.configure_item("btn_stop", enabled=running)
@@ -318,11 +320,11 @@ class StationUI(App):
         x, y = 6, 12
         for name, ok in self.src.dots():
             c = rgb(GREEN if ok else "#55534E")
-            width = 28 + len(name) * 8
+            width = 20 + len(name) * 7
             if x + width > self.t["stepper_w"] + 40:
                 x, y = 6, y + 22
             dpg.draw_circle((x, y), 5, color=c, fill=c, parent="dots")
-            dpg.draw_text((x + 10, y - 9), name, color=rgb(MUTED), size=15, parent="dots")
+            dpg.draw_text((x + 9, y - 8), name, color=rgb(MUTED), size=14, parent="dots")
             x += width
 
     def refresh_channel(self, v: ChannelView):
@@ -368,6 +370,10 @@ class StationUI(App):
             hist("heat_hist", np.clip(cells(m / scale), 0, 1), HEAT_COLS, 612)
         hist("heat_beam", np.clip(v.hist_beam, -180, 180), 13, N_PRB)
 
+    def apply_clock(self, value: str):
+        self.clock = value
+        self.src.set_clock(value)
+
     # ------------------------------------------------------------------ main loop
     def on_click(self):
         if not self.src.can_choose:
@@ -402,6 +408,8 @@ class StationUI(App):
                     dpg.toggle_viewport_fullscreen()
                 if "scenario" in self.state:
                     self.src.request(self.state.pop("scenario"))
+                if "clock" in self.state:
+                    self.apply_clock(self.state.pop("clock"))
                 if self.state.pop("start", False):
                     self.src.start()
                 if self.state.pop("stop", False):
