@@ -15,9 +15,11 @@ vars:
   OAI_DIR: ${REPO}/../openairinterface5g_gui
   OAI_BUILD: ${OAI_DIR}/cmake_targets/ran_build_gui/build
   OAI_CONF: ${OAI_DIR}/targets/PROJECTS/GENERIC-NR-5GC/myconfig
-  # Model set B retrained on the 2026-10-13 static demo-geometry capture (OTA_Experiment_20261013).
-  # The 2026-09-22 moving-robot models: ${OAI_DIR}/models/ai_fb_transformer/capture_20260922_B_topology_from_start
-  MODELS: ${OAI_DIR}/models/ai_fb_transformer/capture_20261013_B
+  # Model set B retrained on the 2026-10-15 dynamic capture (OTA_Experiment_20261015, robot moving the UE;
+  # trained on run 02 without the robot stop). Earlier sets (env MODELS=<folder> selects any of them):
+  #   2026-10-13 static demo geometry: ${OAI_DIR}/models/ai_fb_transformer/capture_20261013_B
+  #   2026-09-22 moving robot:         ${OAI_DIR}/models/ai_fb_transformer/capture_20260922_B_topology_from_start
+  MODELS: ${OAI_DIR}/models/ai_fb_transformer/capture_20261015_B
   UE_MODEL: ${MODELS}/model1_packed_p16.bin
   GNB_DECODER_SAME: ${MODELS}/model1_packed_p16.bin
   GNB_DECODER_CROSS: ${MODELS}/model2_decoder_for_model1_source.bin
