@@ -144,6 +144,13 @@ class App:
                         dpg.add_theme_color(dpg.mvThemeCol_Text, rgb(fg if state or name == "t_clk_on" else "#5E5C57"))
                         dpg.add_theme_style(dpg.mvStyleVar_FramePadding, 8, 5)
             r[name] = th
+        with dpg.theme() as th:
+            with dpg.theme_component(dpg.mvButton):
+                for col in (dpg.mvThemeCol_Button, dpg.mvThemeCol_ButtonHovered, dpg.mvThemeCol_ButtonActive):
+                    dpg.add_theme_color(col, rgb(SURFACE, 0))
+                dpg.add_theme_color(dpg.mvThemeCol_Text, rgb(DIM))
+                dpg.add_theme_style(dpg.mvStyleVar_FramePadding, 0, 5)
+        r["t_clk_label"] = th
 
     # ------------------------------------------------------------------ small helpers
     @staticmethod
@@ -298,7 +305,10 @@ class App:
         if not self.ota:
             return  # RF simulator: no USRP
         with dpg.group(horizontal=True, horizontal_spacing=6):
-            self.text("USRP clock reference", "small", DIM)
+            # the label is drawn like the buttons (same font and padding, no frame): text on one line with theirs
+            lbl = dpg.add_button(label="USRP clock reference")
+            dpg.bind_item_font(lbl, self.res["small"])
+            dpg.bind_item_theme(lbl, self.res["t_clk_label"])
             bw = (LEFT_W - 210) // 2
             for value, label in (("internal", "Internal"), ("external", "External")):
                 b = dpg.add_button(label=label, width=bw, tag=f"clk_{value}", user_data=value,
