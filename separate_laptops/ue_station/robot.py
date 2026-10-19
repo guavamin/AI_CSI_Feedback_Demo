@@ -43,11 +43,12 @@ class RobotParams:
     turn: float = 0.2  # rad/s while going forward (arc only)
 
     def clamp(self) -> "RobotParams":
-        self.speed = min(max(self.speed, 0.02), MAX_SPEED)
-        self.leg_s = min(max(self.leg_s, 1.0), 120.0)
-        self.pause_s = min(max(self.pause_s, 0.0), 10.0)
+        # rounded: the GUI sliders hold float32 values (0.15 -> 0.15000000596...)
+        self.speed = round(min(max(self.speed, 0.02), MAX_SPEED), 3)
+        self.leg_s = round(min(max(self.leg_s, 1.0), 120.0), 1)
+        self.pause_s = round(min(max(self.pause_s, 0.0), 10.0), 1)
         self.cycles = max(int(self.cycles), 0)
-        self.turn = min(max(self.turn, -MAX_TURN), MAX_TURN)
+        self.turn = round(min(max(self.turn, -MAX_TURN), MAX_TURN), 3)
         return self
 
     @property
