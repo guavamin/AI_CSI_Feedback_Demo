@@ -57,7 +57,31 @@ class DryRun:
         return float("nan")
 
 
+def robot_heard(channel: str = "can0", timeout_s: float = 3.0) -> int:
+    """Frames received from the robot on channel within timeout_s (the base broadcasts its state every few ms).
+    pyagxrobots waits only 10 ms for the first one and then fails with an obscure AttributeError."""
+    import can
+
+    try:
+        bus = can.Bus(interface="socketcan", channel=channel)
+    except OSError as exc:
+        raise RuntimeError(f"{channel} not available ({exc.strerror or exc}): USB-to-CAN adapter plugged in and "
+                           f"brought up (Robot tab: Bring up CAN)?") from None
+    try:
+        n, t0 = 0, time.monotonic()
+        while time.monotonic() - t0 < timeout_s and n < 5:
+            if bus.recv(0.2) is not None:
+                n += 1
+        return n
+    finally:
+        bus.shutdown()
+
+
 def connect():
+    if robot_heard() == 0:
+        raise RuntimeError("no messages from the robot on can0 within 3 s: is the robot switched on and its CAN "
+                           "cable connected to this laptop's USB-to-CAN adapter? (ip -details -statistics link "
+                           "show can0: RX packets must grow, state ERROR-ACTIVE, bitrate 500000)")
     import wrapt
 
     # pyagxrobots needs an older wrapt: the same fix as robot/scout_line.py
