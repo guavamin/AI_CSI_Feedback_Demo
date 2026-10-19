@@ -166,8 +166,9 @@ class RobotControl:
         self.log_dir.mkdir(parents=True, exist_ok=True)
         log_path = self.log_dir / time.strftime("robot_%Y%m%d_%H%M%S.jsonl")
         try:
+            # cwd: pyagxrobots writes its CAN trace (logfile.asc) into the working directory
             self._proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-                                          start_new_session=True)
+                                          start_new_session=True, cwd=str(self.log_dir))
         except OSError as exc:
             return f"cannot start the robot driver with {self.python}: {exc}"
         with self._lock:
