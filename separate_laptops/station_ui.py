@@ -27,6 +27,7 @@ from common.station_data import ChannelView
 from common.style import BG, DIM, GREEN, LINE, MUTED, ORANGE, SCENARIO, SCENARIOS, SURFACE, TEXT, rgb, viewport_icons
 from same_laptop.app import HEAT_COLS, KEYS, LINKS, METRICS, RED, SUBC, App, tcol
 from same_laptop.mockup import DIA_DESIGN_H, diagram_scale, draw_diagram
+from separate_laptops.robot_tab import RobotTabMixin
 
 log = logging.getLogger(__name__)
 N_PRB, PRG = 51, 4
@@ -63,7 +64,7 @@ def cells(a: np.ndarray) -> np.ndarray:
     return a.reshape(*a.shape[:-1], HEAT_COLS, -1).mean(axis=-1)
 
 
-class StationUI(App):
+class StationUI(RobotTabMixin, App):
     def __init__(self, source, args):  # noqa: D107 - no controller of its own: the source owns the station
         self.src, self.args = source, args
         self.station = source.station
@@ -117,8 +118,11 @@ class StationUI(App):
                             self.build_plots(RIGHT_W, PLOT_H, GAP, self.metrics)
                 with dpg.tab(label=self.st["tab"], tag="tab_channel"):
                     self.build_channel(act, inner_w, body_h, GAP)
-        if self.state.get("tab_now") == "channel":
-            dpg.set_value("tabbar", "tab_channel")
+                if hasattr(self.src, "robot"):
+                    with dpg.tab(label="  Robot  ", tag="tab_robot"):
+                        self.build_robot_tab(inner_w, body_h, GAP)
+        if self.state.get("tab_now") in ("channel", "robot"):
+            dpg.set_value("tabbar", f"tab_{self.state['tab_now']}")
         dpg.set_primary_window("main", True)
 
     def station_badge(self):
@@ -374,6 +378,20 @@ class StationUI(App):
         self.clock = value
         self.src.set_clock(value)
 
+    def _script_action(self, action: str):
+        if action == "robot":
+            dpg.set_value("tabbar", "tab_robot")
+            self.state["tab_now"] = "robot"
+            return
+        if action == "robot_arc":  # testing: switch the pattern as a click would
+            dpg.set_value("rb_pattern", "Arc")
+            self._robot_param_changed()
+            return
+        if action in ("robot_start", "robot_stop"):
+            self.state[action] = True
+            return
+        super()._script_action(action)
+
     # ------------------------------------------------------------------ main loop
     def on_click(self):
         if not self.src.can_choose:
@@ -390,6 +408,8 @@ class StationUI(App):
         dpg.show_viewport()
         dpg.toggle_viewport_fullscreen() if self.args.fullscreen else dpg.maximize_viewport()
         self.resources()
+        if hasattr(self.src, "robot"):
+            self.robot_resources()
         with dpg.handler_registry():
             dpg.add_key_press_handler(dpg.mvKey_F11, callback=lambda: self.state.update(fullscreen=True))
             dpg.add_key_press_handler(dpg.mvKey_Escape, callback=lambda: self.state.update(hide_popup=True))
@@ -410,6 +430,8 @@ class StationUI(App):
                     self.src.request(self.state.pop("scenario"))
                 if "clock" in self.state:
                     self.apply_clock(self.state.pop("clock"))
+                if hasattr(self.src, "robot"):
+                    self.handle_robot_actions()
                 if self.state.pop("start", False):
                     self.src.start()
                 if self.state.pop("stop", False):
@@ -418,7 +440,8 @@ class StationUI(App):
                     self.src.hide_popup()
                 if "tab" in self.state:
                     tab = self.state.pop("tab")
-                    self.state["tab_now"] = "channel" if dpg.get_item_alias(tab) == "tab_channel" else "demo"
+                    self.state["tab_now"] = {"tab_channel": "channel", "tab_robot": "robot"}.get(
+                        dpg.get_item_alias(tab), "demo")
                 cur = (dpg.get_viewport_client_width(), dpg.get_viewport_client_height())
                 key = (cur, *self.src.scenario())
                 if frame >= 6 and key != self._built_key:
@@ -439,6 +462,8 @@ class StationUI(App):
                     self.refresh_plots(self.src.plot_view())
                     if self.state.get("tab_now") == "channel":
                         self.refresh_channel(self.src.channel())
+                    if self.state.get("tab_now") == "robot":
+                        self.refresh_robot()
                 dpg.render_dearpygui_frame()
                 fps = 20 if self.state.get("tab_now") == "channel" else 30
                 time.sleep(max(0.0, 1 / fps - (time.monotonic() - now)))

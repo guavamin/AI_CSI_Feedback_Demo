@@ -90,12 +90,16 @@ if [[ ${SKIP_SUDOERS:-0} != 1 ]]; then
     # "user ALL=(ALL) ALL" in a later file would ask for a password again)
     rule=/etc/sudoers.d/zz-pyoaicsinet
     rm -f /etc/sudoers.d/pyoaicsinet  # earlier name of this rule
+    MODPROBE=$(PATH=/usr/sbin:/usr/bin:/sbin:/bin command -v modprobe)
+    IP=$(PATH=/usr/sbin:/usr/bin:/sbin:/bin command -v ip)  # the same lookup as the GUI's "Bring up CAN"
     cat >"$rule.tmp" <<EOF
-# ai-csi-feedback-demo: the GUI starts and stops the OAI softmodems without a password
+# ai-csi-feedback-demo: the GUI starts and stops the OAI softmodems without a password,
+# and (UE station, Robot tab) brings up the robot's USB-to-CAN interface
 $GUI_USER ALL=(root) NOPASSWD: $BUILD/nr-softmodem, $BUILD/nr-uesoftmodem, \\
     /usr/bin/pkill -TERM -x nr-softmodem, /usr/bin/pkill -KILL -x nr-softmodem, \\
     /usr/bin/pkill -TERM -x nr-uesoftmodem, /usr/bin/pkill -KILL -x nr-uesoftmodem, \\
-    /usr/bin/kill -TERM -*, /usr/bin/kill -KILL -*
+    /usr/bin/kill -TERM -*, /usr/bin/kill -KILL -*, \\
+    $MODPROBE gs_usb, $IP link set can0 up type can bitrate 500000
 EOF
     chmod 440 "$rule.tmp"
     visudo -cf "$rule.tmp" && mv "$rule.tmp" "$rule"
@@ -121,6 +125,7 @@ step "5/5 GUI Python environment"
 cd "$REPO"
 as_user ./install.sh
 as_user .venv/bin/pip install -q -r requirements-dev.txt
+as_user .venv/bin/pip install -q -r requirements-robot.txt  # Robot tab (AgileX SDK); harmless without a robot
 as_user .venv/bin/python -m pytest -q
 
 step "done"

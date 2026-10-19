@@ -50,6 +50,10 @@ class MockSource:
         self.station, self.can_choose = station, station == "gnb"
         self.history = history
         self.clock = "internal"
+        if station == "ue":
+            from separate_laptops.ue_station.robot import RobotControl
+
+            self.robot = RobotControl(dry_run=True)  # mockup: no robot, no CAN
         self._key = active
         self.runs = {s["key"]: [r for r in csv.DictReader(open(MOCKUP_DATA / "runs" / s["run"] / "metrics.csv"))
                                 if float(r["dl_mbps"]) > 0.5] for s in SCENARIOS}
@@ -188,6 +192,12 @@ class MockSource:
             self._popup = (f"gNB STATION: {title.upper()}", lines, key)
         self._popup_until = time.monotonic() + POPUP_S
         self.event("ok", f"{_short(prev)} -> {_short(key)}")
+
+    def can_status(self):
+        return True, "dry run"
+
+    def bring_up_can(self):
+        return ""
 
     def set_clock(self, value):
         self.clock = value
@@ -342,6 +352,11 @@ class UeSource:
 
         self.ota = not cfg.oai.rfsim
         self.clock = "internal"  # USRP clock reference until the switch is used
+        from separate_laptops.ue_station.robot import RobotControl
+
+        st = cfg.station
+        self.can_iface = str(st.get("robot_can", "can0"))
+        self.robot = RobotControl(python=str(st.get("robot_python") or ""), dry_run=bool(st.get("robot_dry_run")))
         self.ue = UeStation(cfg)
         if self.ota:
             self.ue.launcher.clock_source = self.clock
@@ -437,6 +452,20 @@ class UeSource:
         self.ue.event("info", f"USRP clock reference: {value} (clock / time source {1 if value == 'external' else 0} "
                               f"at the next UE start)")
 
+    def can_status(self):
+        from separate_laptops.ue_station.robot import can_status
+
+        return can_status(self.can_iface)
+
+    def bring_up_can(self):
+        from separate_laptops.ue_station.robot import bring_up_can
+
+        return bring_up_can(self.can_iface)
+
+    def event(self, level, text):
+        self.ue.event(level, text)
+
     def shutdown(self):
+        self.robot.stop()  # never leave the robot driving
         self.ue.shutdown()
 

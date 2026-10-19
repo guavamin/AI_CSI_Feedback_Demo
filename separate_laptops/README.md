@@ -51,6 +51,24 @@ radios: `--profile configs/station_{gnb,ue}_rfsim.yaml` (UE side: `GNB_STATION=<
 Without a window: `.venv/bin/python -m separate_laptops.headless {gnb,ue} --profile ...`.
 Mockups on recorded data: `.venv/bin/python -m separate_laptops.{gnb,ue}_station.mockup`.
 
+## Robot tab (UE station)
+
+The UE station has a **Robot** tab for the AgileX Scout Mini that carries the UE (the procedure of
+`robot/scout_line.py`, generalised): straight line or arc, back and forth (the way back retraces the way out),
+speed (<= 0.3 m/s), time per direction, turn rate (arc), pause at each end, cycles (0 = until Stop). The planned
+trajectory is drawn as the parameters change; while driving, the planned position now, the path driven
+(integrated from the robot's measured speed and turn rate), the speeds, battery voltage and CAN state.
+
+- The robot runs from `ue_station/robot_driver.py`, a separate process with the GUI's Python (pyagxrobots from
+  `requirements-robot.txt`) or `station.robot_python` in the profile. Stop, closing the window, the end of the
+  cycles or any error command zero velocity (as scout_line.py) before the driver exits.
+- **Bring up CAN** in the tab = `modprobe gs_usb` + `ip link set can0 up type can bitrate 500000` (allowed
+  without a password by `setup_station.sh`). The USB-to-CAN adapter must be on the laptop running the UE station.
+- Every status line of a drive is kept in `data/runs/robot_logs/robot_<time>.jsonl` (parameters, phase,
+  commanded and measured speed, with wall-clock time): matches recorded data with the motion (e.g. a stop).
+- Mockup / testing: `.venv/bin/python -m separate_laptops.ue_station.mockup` drives a simulated robot (dry run);
+  `station.robot_dry_run: true` does the same in the live station.
+
 ## Tests
 
     .venv/bin/python -m tools.e2e_stations                    # both stations on this machine, RF sim, 150 ms link delay
