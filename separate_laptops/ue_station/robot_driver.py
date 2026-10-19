@@ -7,7 +7,8 @@ backward with the same speed and the opposite turn rate (so it retraces the same
 until stopped. Commands at 10 Hz, as scout_line.py. Prints one JSON line per command: time, phase, cycle,
 time in the leg, commanded and (with the robot) measured speed / turn rate, battery voltage.
 
-Stops the robot (zero velocity) on SIGINT / SIGTERM, at the end, and on any error, then releases the CAN socket.
+Stops the robot (zero velocity) on SIGINT / SIGTERM, at the end, and on any error, releases the CAN socket and
+exits (a second Ctrl+C exits at once).
 --dry-run: no robot, no CAN; the measured values follow the commands (testing the GUI).
 Runs with any Python that has pyagxrobots (the station GUI starts it as a separate process).
 """
@@ -17,6 +18,7 @@ from __future__ import annotations
 import argparse
 import gc
 import json
+import os
 import signal
 import sys
 import time
@@ -29,7 +31,10 @@ stop = False
 
 
 def on_signal(*_):
+    """First Ctrl+C / SIGTERM: stop the robot and exit cleanly; a second one: exit at once."""
     global stop
+    if stop:
+        os._exit(130)
     stop = True
 
 
@@ -139,4 +144,8 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    code = main()
+    sys.stdout.flush()
+    # pyagxrobots starts a CAN receive thread that never ends (not a daemon): a normal exit would wait for it
+    # forever. The robot is stopped and the socket released by now, so leave without waiting.
+    os._exit(code)
