@@ -28,8 +28,8 @@ class RobotTabMixin:
         right_w = inner_w - left_w - GAP
         with dpg.group(horizontal=True, horizontal_spacing=GAP):
             with dpg.child_window(width=left_w, height=body_h, border=False, no_scrollbar=True) as left:
-                dpg.bind_item_theme(left, self.child_theme(rgb("#1B1B1A"), rgb("#1B1B1A")))
-                with self.box(left_w, 205):
+                dpg.bind_item_theme(left, self.child_theme(rgb("#1B1B1A"), rgb("#1B1B1A"), pad=(0, 0), spacing=(8, GAP)))
+                with self.box(left_w, 218):
                     self.heading("ROBOT", "  ·  AgileX Scout Mini carrying the UE")
                     with dpg.group(horizontal=True):
                         dpg.add_drawlist(width=14, height=18, tag="rb_can_dot")
@@ -47,8 +47,7 @@ class RobotTabMixin:
                     for b in (b1, b2):
                         dpg.bind_item_font(b, self.res["med"])
                     dpg.bind_item_theme(b2, self.res["t_rb_stop"])
-                dpg.add_spacer(height=GAP - 8)
-                with self.box(left_w, body_h - 205 - GAP + 4):
+                with self.box(left_w, body_h - 218 - GAP):
                     self.heading("PARAMETERS", "  ·  applied at Start")
                     dpg.add_radio_button(("Straight line", "Arc"), tag="rb_pattern", horizontal=True,
                                          default_value="Arc" if p.pattern == "arc" else "Straight line",
@@ -68,10 +67,8 @@ class RobotTabMixin:
                         else:
                             dpg.add_slider_int(tag=tag, width=sw, min_value=lo, max_value=hi, default_value=val,
                                                format=fmt, callback=self._robot_param_changed)
-                    dpg.add_spacer(height=4)
-                    self.text("", "small", MUTED, tag="rb_summary", wrap=left_w - 40)
             with dpg.child_window(width=right_w, height=body_h, border=False, no_scrollbar=True) as right:
-                dpg.bind_item_theme(right, self.child_theme(rgb("#1B1B1A"), rgb("#1B1B1A")))
+                dpg.bind_item_theme(right, self.child_theme(rgb("#1B1B1A"), rgb("#1B1B1A"), pad=(0, 0), spacing=(8, GAP)))
                 top = int(body_h * 0.68)
                 with self.box(right_w, top):
                     self.heading("TRAJECTORY  ·  SEEN FROM ABOVE",
@@ -92,10 +89,9 @@ class RobotTabMixin:
                                 s = dpg.add_scatter_series([], [], label=label, tag=tag)
                                 dpg.bind_item_theme(s, self.res[f"t_rb_pt_{tag}"])
                     self.axis_font(pl)
-                dpg.add_spacer(height=GAP - 8)
-                with self.box(right_w, body_h - top - GAP + 4):
+                with self.box(right_w, body_h - top - GAP):
                     self.heading("SPEED", "  ·  commanded and measured by the robot, last 60 s")
-                    with dpg.plot(width=-1, height=body_h - top - GAP - 40, no_menus=True, no_title=True,
+                    with dpg.plot(width=-1, height=body_h - top - GAP - 44, no_menus=True, no_title=True,
                                   no_mouse_pos=True) as pl:
                         dpg.add_plot_legend(location=dpg.mvPlot_Location_NorthEast)
                         self.t["rb_sx"] = dpg.add_plot_axis(dpg.mvXAxis, label="Time (s)")
@@ -141,9 +137,6 @@ class RobotTabMixin:
             self.src.robot.params = p
         for tag in ("rb_turn", "rb_turn_lbl"):  # only the arc turns
             dpg.configure_item(tag, show=p.pattern == "arc")
-        total = "until Stop" if p.cycles == 0 else f"{p.cycles} cycles = {p.cycles * p.cycle_s / 60:.1f} min"
-        dpg.set_value("rb_summary", f"One way: {p.leg_m:.2f} m in {p.leg_s:.0f} s  ·  one cycle (out, back, two pauses): "
-                                    f"{p.cycle_s:.0f} s  ·  {total}")
         self._draw_plan(self.src.robot.params if self.src.robot.running() else p)
 
     def _draw_plan(self, p: RobotParams):
