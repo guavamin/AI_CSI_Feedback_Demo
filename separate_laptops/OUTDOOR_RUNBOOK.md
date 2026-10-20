@@ -48,45 +48,37 @@ ip -details -statistics link show can0                        # run twice: RX pa
 
 ## 1. Data collection (legacy CSI)
 
-Two runs, each the same steps:
-
-| Run | Purpose | Stop at |
-|---|---|---|
-| `02_train` | training | **≥ 21,000 files** (≥ 28 min) |
-| `01_test` | independent test, never trained on | **≥ 7,500 files** (~10 min) |
-
-Same motion in both runs; in `02_train` keep repeating the same route / pattern for the whole time.
+One run, `capture`: **≥ 21,000 files** (≥ 28 min; a little more if the robot may stop, since stops are left out).
+Training uses its first ~15,000 rows; the rest (row 15,384 to the end) is the final test, never trained on.
+Keep repeating the same route / pattern for the whole time.
 
 **1.1 gNB laptop, terminal 1 (root): gNB.** Wait ~10 s (log shows the reference `LOCKED` and the radio running).
 ```bash
-bash /home/kengminl/Desktop/InterDigital_Project/ai-csi-feedback-demo/separate_laptops/collect.sh gnb outdoor_dynamic 02_train
+bash /home/kengminl/Desktop/InterDigital_Project/ai-csi-feedback-demo/separate_laptops/collect.sh gnb outdoor_dynamic capture
 ```
 
 **1.2 UE laptop, terminal 1 (user): robot.** Starts driving at once; Ctrl+C stops it (a second Ctrl+C exits at once).
 Change speed (m/s, ≤ 0.3) / `--leg` (s per direction) / `--pause` as needed; `--turn 0.2` for an arc.
 ```bash
-mkdir -p /home/kengminl/Desktop/InterDigital_Project/ota_sessions/outdoor_dynamic/02_train
+mkdir -p /home/kengminl/Desktop/InterDigital_Project/ota_sessions/outdoor_dynamic/capture
 cd /home/kengminl/Desktop/InterDigital_Project/ai-csi-feedback-demo
 .venv/bin/python separate_laptops/ue_station/robot_driver.py --speed 0.15 --leg 12 --pause 1 --cycles 0 \
-    | tee -i -a /home/kengminl/Desktop/InterDigital_Project/ota_sessions/outdoor_dynamic/02_train/robot.jsonl
+    | tee -i -a /home/kengminl/Desktop/InterDigital_Project/ota_sessions/outdoor_dynamic/capture/robot.jsonl
 ```
 
 **1.3 UE laptop, terminal 2 (root): UE.** Attached when the log shows `TUN Interface oaitun_ue1 successfully configured`.
 ```bash
-bash /home/kengminl/Desktop/InterDigital_Project/ai-csi-feedback-demo/separate_laptops/collect.sh ue outdoor_dynamic 02_train
+bash /home/kengminl/Desktop/InterDigital_Project/ai-csi-feedback-demo/separate_laptops/collect.sh ue outdoor_dynamic capture
 ```
 If the UE dies before the target (log ends with `ERROR_CODE_OVERFLOW` / `readBlockSize`): run the same command again;
 it continues in the same folder.
 
 **1.4 UE laptop, terminal 3 (user): count.**
 ```bash
-watch -n 5 "find /home/kengminl/Desktop/InterDigital_Project/ota_sessions/outdoor_dynamic/02_train/csi/ue/csi_rs_channels -name 'H_*.bin' | wc -l"
+watch -n 5 "find /home/kengminl/Desktop/InterDigital_Project/ota_sessions/outdoor_dynamic/capture/csi/ue/csi_rs_channels -name 'H_*.bin' | wc -l"
 ```
 
 **1.5 Stop at the target**: Ctrl+C in UE terminal 2 (UE), then UE terminal 1 (robot), then gNB terminal 1 (gNB).
-
-**1.6 Run `01_test`**: steps 1.1 – 1.5 again with `01_test` in place of `02_train` (all four commands), stop at
-≥ 7,500 files.
 
 **1.7 Give the data to your user account (root, both laptops)**
 ```bash
@@ -96,8 +88,7 @@ chown -R kengminl:kengminl /home/kengminl/Desktop/InterDigital_Project/ota_sessi
 **1.8 Check before packing up (UE laptop, user)**: rows = files, no long gaps, SINR sensible, and any robot stop.
 ```bash
 cd /home/kengminl/Desktop/InterDigital_Project/ai-csi-feedback-demo
-.venv/bin/python -m tools.capture_prepare check /home/kengminl/Desktop/InterDigital_Project/ota_sessions/outdoor_dynamic/02_train/csi/ue
-.venv/bin/python -m tools.capture_prepare check /home/kengminl/Desktop/InterDigital_Project/ota_sessions/outdoor_dynamic/01_test/csi/ue
+.venv/bin/python -m tools.capture_prepare check /home/kengminl/Desktop/InterDigital_Project/ota_sessions/outdoor_dynamic/capture/csi/ue
 ```
 "rows without a file" must be 0. A listed STOP is fine (left out in 2.2), but if the run is mostly stops, record again.
 
@@ -120,7 +111,7 @@ tar -xzf ~/Downloads/outdoor_dynamic_ue.tar.gz -C /home/kengminl/Desktop/InterDi
 **2.2 Check and build the training view (user)**: `--auto` leaves out robot stops (± 2 s); the recording is not changed.
 ```bash
 cd /home/kengminl/Desktop/InterDigital_Project/ai-csi-feedback-demo
-.venv/bin/python -m tools.capture_prepare make /home/kengminl/Desktop/InterDigital_Project/ota_sessions/outdoor_dynamic/02_train/csi/ue --auto
+.venv/bin/python -m tools.capture_prepare make /home/kengminl/Desktop/InterDigital_Project/ota_sessions/outdoor_dynamic/capture/csi/ue --auto
 ```
 Prints the rows kept; should stay ≥ 18,753 (the recipe's size; fewer still works, with smaller blocks).
 
@@ -129,7 +120,7 @@ Prints the rows kept; should stay ≥ 18,753 (the recipe's size; fewer still wor
 cd /home/kengminl/Desktop/InterDigital_Project/InterDigital_Interoperability_Implementation
 /home/kengminl/Desktop/InterDigital_Project/ID_project/bin/python -m interoperability.run_capture_retrain \
     --study capture_outdoor_dynamic \
-    --dataset /home/kengminl/Desktop/InterDigital_Project/ota_sessions/outdoor_dynamic/02_train/csi/ue_train \
+    --dataset /home/kengminl/Desktop/InterDigital_Project/ota_sessions/outdoor_dynamic/capture/csi/ue_train \
     2>&1 | tee /home/kengminl/Desktop/InterDigital_Project/ota_sessions/outdoor_dynamic/retrain.log
 ```
 Interrupted? Run the same command again: finished stages are skipped. At the end of the log: four `PASS` lines
@@ -143,12 +134,13 @@ chown -R kengminl:kengminl \
     /home/kengminl/Desktop/InterDigital_Project/ota_sessions/outdoor_dynamic/retrain.log
 ```
 
-**2.5 Compare on the test run (user)**: new models vs the 10/15 dynamic ones, on `01_test`:
+**2.5 Compare on the final-test block (user)**: new models vs the 10/15 dynamic ones, on rows 15,384 to the end
+of the training view (never used for training or model selection):
 ```bash
 cd /home/kengminl/Desktop/InterDigital_Project/ai-csi-feedback-demo
-T=/home/kengminl/Desktop/InterDigital_Project/ota_sessions/outdoor_dynamic/01_test/csi/ue
-.venv/bin/python -m tools.evaluate_models $T ../openairinterface5g_gui/models/ai_fb_transformer/capture_outdoor_dynamic_B --every 5
-.venv/bin/python -m tools.evaluate_models $T ../openairinterface5g_gui/models/ai_fb_transformer/capture_20261015_B --every 5
+T=/home/kengminl/Desktop/InterDigital_Project/ota_sessions/outdoor_dynamic/capture/csi/ue_train
+.venv/bin/python -m tools.evaluate_models $T ../openairinterface5g_gui/models/ai_fb_transformer/capture_outdoor_dynamic_B --rows 15384: --every 5
+.venv/bin/python -m tools.evaluate_models $T ../openairinterface5g_gui/models/ai_fb_transformer/capture_20261015_B --rows 15384: --every 5
 ```
 Beam gain closer to 0 dB and higher beam cosine = better (Legacy is listed for reference).
 
