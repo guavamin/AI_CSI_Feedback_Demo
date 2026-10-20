@@ -97,7 +97,13 @@ def connect():
 
 
 def emit(**msg):
-    print(json.dumps(msg), flush=True)
+    """One status line. If nobody reads them any more (the GUI or "| tee" is gone), stop the robot: it must never
+    keep driving unwatched."""
+    global stop
+    try:
+        print(json.dumps(msg), flush=True)
+    except OSError:
+        stop = True
 
 
 def measured(bot):
@@ -169,7 +175,10 @@ def main() -> int:
 
 if __name__ == "__main__":
     code = main()
-    sys.stdout.flush()
+    try:
+        sys.stdout.flush()
+    except OSError:
+        pass
     # pyagxrobots starts a CAN receive thread that never ends (not a daemon): a normal exit would wait for it
     # forever. The robot is stopped and the socket released by now, so leave without waiting.
     os._exit(code)
