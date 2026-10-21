@@ -34,6 +34,7 @@ for name in nr-softmodem nr-uesoftmodem; do
 done
 
 mkdir -p "$DIR/csi/$ROLE" "$DIR/config_snapshot"
+chown "$OWNER:" "$BASE/ota_sessions"  # created here as root: the user must be able to add sessions (unzip, mkdir)
 chown -R "$OWNER:" "$BASE/ota_sessions/$SESSION"
 if [[ $ROLE == gnb ]]; then
     cp -n "$CONF/gnb.sa.band78.51prb.usrpb200.conf" "$DIR/config_snapshot/"
