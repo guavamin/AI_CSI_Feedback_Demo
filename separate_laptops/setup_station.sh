@@ -43,7 +43,7 @@ export GIT_PAGER=cat PAGER=cat  # OAI's installer prints git diffs / logs: never
 step "1/5 system packages"
 apt-get update -q
 apt-get install -y -q git sudo lsb-release software-properties-common build-essential cmake ninja-build \
-    python3-venv python3-pip iperf iproute2 pciutils
+    python3-venv python3-pip iperf iproute2 pciutils zip unzip
 
 step "2/5 OAI $OAI_BRANCH"
 if [[ ! -d $OAI_DIR/.git && ! -f $OAI_DIR/.git ]]; then

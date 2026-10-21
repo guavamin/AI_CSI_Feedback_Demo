@@ -92,21 +92,22 @@ cd /home/kengminl/Desktop/InterDigital_Project/ai-csi-feedback-demo
 ```
 "rows without a file" must be 0. A listed STOP is fine (left out in 2.2), but if the run is mostly stops, record again.
 
-**1.9 Pack for Dropbox (UE laptop, user)**, then upload `~/outdoor_dynamic_ue.tar.gz` (~0.3 GB):
+**1.9 Pack for Dropbox (UE laptop, user)**, then upload `~/outdoor_dynamic_ue.zip` (~0.3 GB):
 ```bash
-tar -czf ~/outdoor_dynamic_ue.tar.gz -C /home/kengminl/Desktop/InterDigital_Project/ota_sessions outdoor_dynamic
+cd /home/kengminl/Desktop/InterDigital_Project/ota_sessions && zip -r -q ~/outdoor_dynamic_ue.zip outdoor_dynamic
 ```
+(`zip: command not found`: as root `apt install zip unzip`.)
 
 ---
 
 ## 2. Training (gNB laptop)
 
-**2.1 Unpack (user)**: download `outdoor_dynamic_ue.tar.gz` from Dropbox to `~/Downloads`, then
+**2.1 Unpack (user)**: download `outdoor_dynamic_ue.zip` from Dropbox to `~/Downloads`, then
 ```bash
 mkdir -p /home/kengminl/Desktop/InterDigital_Project/ota_sessions
-tar -xzf ~/Downloads/outdoor_dynamic_ue.tar.gz -C /home/kengminl/Desktop/InterDigital_Project/ota_sessions
+unzip -q -n ~/Downloads/outdoor_dynamic_ue.zip -d /home/kengminl/Desktop/InterDigital_Project/ota_sessions
 ```
-(it lands next to the gNB's own logs of the same session.)
+(it lands next to the gNB's own logs of the same session; `-n` never overwrites a file already there.)
 
 **2.2 Check and build the training view (user)**: `--auto` leaves out robot stops (± 2 s); the recording is not changed.
 ```bash
@@ -144,9 +145,9 @@ T=/home/kengminl/Desktop/InterDigital_Project/ota_sessions/outdoor_dynamic/captu
 ```
 Beam gain closer to 0 dB and higher beam cosine = better (Legacy is listed for reference).
 
-**2.6 Pack the models for Dropbox (user)**, then upload `~/capture_outdoor_dynamic_B.tar.gz` (~3.5 MB):
+**2.6 Pack the models for Dropbox (user)**, then upload `~/capture_outdoor_dynamic_B.zip` (~3.5 MB):
 ```bash
-tar -czf ~/capture_outdoor_dynamic_B.tar.gz -C /home/kengminl/Desktop/InterDigital_Project/openairinterface5g_gui/models/ai_fb_transformer capture_outdoor_dynamic_B
+cd /home/kengminl/Desktop/InterDigital_Project/openairinterface5g_gui/models/ai_fb_transformer && zip -r -q ~/capture_outdoor_dynamic_B.zip capture_outdoor_dynamic_B
 ```
 (The UE itself only loads `model1_packed_p16.bin`, the Vendor 1 encoder; the whole folder is small and keeps the
 same layout on both laptops.)
@@ -155,9 +156,9 @@ same layout on both laptops.)
 
 ## 3. Install the model on the UE laptop (user)
 
-Download `capture_outdoor_dynamic_B.tar.gz` from Dropbox to `~/Downloads`, then
+Download `capture_outdoor_dynamic_B.zip` from Dropbox to `~/Downloads`, then
 ```bash
-tar -xzf ~/Downloads/capture_outdoor_dynamic_B.tar.gz -C /home/kengminl/Desktop/InterDigital_Project/openairinterface5g_gui/models/ai_fb_transformer
+unzip -q -o ~/Downloads/capture_outdoor_dynamic_B.zip -d /home/kengminl/Desktop/InterDigital_Project/openairinterface5g_gui/models/ai_fb_transformer
 ls -l /home/kengminl/Desktop/InterDigital_Project/openairinterface5g_gui/models/ai_fb_transformer/capture_outdoor_dynamic_B/model1_packed_p16.bin
 ```
 
