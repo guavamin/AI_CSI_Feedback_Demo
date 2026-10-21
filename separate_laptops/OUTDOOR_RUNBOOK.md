@@ -116,7 +116,7 @@ cd /home/kengminl/Desktop/InterDigital_Project/ai-csi-feedback-demo
 ```
 Prints the rows kept; should stay ≥ 18,753 (the recipe's size; fewer still works, with smaller blocks).
 
-**2.3 Train (root, ~50 min, GPU)**
+**2.3 Train (root, ~15 min, GPU)**
 ```bash
 cd /home/kengminl/Desktop/InterDigital_Project/InterDigital_Interoperability_Implementation
 /home/kengminl/Desktop/InterDigital_Project/ID_project/bin/python -m interoperability.run_capture_retrain \
