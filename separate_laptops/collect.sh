@@ -53,7 +53,7 @@ else
 fi
 # what was run, for later (appended on every start: a UE restart adds a line)
 {
-    echo "$(date -u +%FT%TZ) host=$(hostname) role=$ROLE clock=$CLOCK oai=$(git -C "$OAI" rev-parse --short HEAD)"
+    echo "$(date -u +%FT%TZ) host=$(hostname) role=$ROLE clock=$CLOCK oai=$(git -c safe.directory="*" -C "$OAI" rev-parse --short HEAD)"
     echo "  cd $BUILD && ${ARGS[*]}"
 } >> "$DIR/commands_$ROLE.txt"
 chown "$OWNER:" "$DIR/commands_$ROLE.txt"
