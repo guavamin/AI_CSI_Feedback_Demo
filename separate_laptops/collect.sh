@@ -5,7 +5,7 @@
 #   gNB laptop (root):  bash collect.sh gnb <session> <run>
 #   UE laptop  (root):  bash collect.sh ue  <session> <run>
 #
-#   <session>  e.g. 20261021_outdoor      <run>  e.g. 02_train (training) or 01_test (independent test)
+#   <session>  e.g. outdoor_dynamic        <run>  capture (one run: the training recipe keeps its last block as the test set)
 #   data:      ~/Desktop/InterDigital_Project/ota_sessions/<session>/<run>/   (the same path on both laptops)
 #              UE:  csi/ue/csi_reports.csv + csi/ue/csi_rs_channels/H_*.bin  (the training data), ue.log
 #              gNB: csi/gnb/*.csv, gnb.log
