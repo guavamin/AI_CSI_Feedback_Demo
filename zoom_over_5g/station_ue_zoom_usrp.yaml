@@ -1,0 +1,11 @@
+# Zoom over 5G, UE laptop, over the air: the normal UE station profile (configs/station_ue_usrp.yaml) with one
+# change for the test. While ue5g_netns.sh keeps oaitun_ue1 in the ue5g namespace, the UE station cannot see
+# the UE's IP and would take that for a lost PDU session and restart the UE after ~20 s. Here it waits instead.
+# A UE that exits is still restarted (ue5g_netns.sh follow moves the new oaitun_ue1 in again).
+# Without the IP the UE station also does not run its iperf receiver, so the gNB station sends no iperf:
+# the downlink is left to Zoom.
+extends: ../configs/station_ue_usrp.yaml
+profile: station_ue_zoom_usrp
+
+iperf:
+  pdu_retry_wait_s: 86400.0   # normal profile: 5 s x 3 retries + 5 s = 20 s

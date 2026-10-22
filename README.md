@@ -18,6 +18,7 @@ same_laptop/         booth GUI: gNB, UE, core network and GUI on one laptop
   app.py             the live GUI
   mockup.py          the approved design, replaying recorded OTA data
 separate_laptops/    gNB station + UE station (mockups; see separate_laptops/README.md)
+zoom_over_5g/        tests: a Zoom call over the 5G link on the separate-laptop setup (see zoom_over_5g/README.md)
 configs/             run profiles: same_laptop_base.yaml, demo_usrp.yaml (over the air), demo_rfsim.yaml
 assets/              bundled fonts (Ubuntu Font Licence) and logos
 data/mockups/        OTA replay data used by the mockups (regenerate with tools/export_mockup_*.py)

@@ -1,0 +1,7 @@
+# Zoom over 5G, RF simulator (dry run without radios): configs/station_ue_rfsim.yaml with the same change as
+# station_ue_zoom_usrp.yaml (no UE restart while oaitun_ue1 is in the ue5g namespace).
+extends: ../configs/station_ue_rfsim.yaml
+profile: station_ue_zoom_rfsim
+
+iperf:
+  pdu_retry_wait_s: 86400.0
