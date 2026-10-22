@@ -25,7 +25,7 @@ import numpy as np
 
 from common.station_data import ChannelView
 from common.style import BG, DIM, GREEN, LINE, MUTED, ORANGE, SCENARIO, SCENARIOS, SURFACE, TEXT, rgb, viewport_icons
-from same_laptop.app import HEAT_COLS, KEYS, LINKS, METRICS, RED, SUBC, App, tcol
+from same_laptop.app import ABS_DB, HEAT_COLS, KEYS, LINKS, METRICS, RED, SUBC, App, mag_db, tcol
 from same_laptop.mockup import DIA_DESIGN_H, diagram_scale, draw_diagram
 from separate_laptops.robot_tab import RobotTabMixin
 
@@ -77,6 +77,7 @@ class StationUI(RobotTabMixin, App):
         self._popup_key = None
         self.metrics = METRICS if self.station == "gnb" else UE_METRICS
         self.clock = getattr(source, "clock", "internal")
+        self.heat_mode = "absolute"  # channel heat maps: absolute (dB, fixed scale) | relative (per report)
 
     # ------------------------------------------------------------------ layout
     def build(self, W: int, H: int) -> None:
@@ -227,6 +228,7 @@ class StationUI(RobotTabMixin, App):
     def build_channel(self, act, inner_w, body_h, GAP):
         key, gnb = act["key"], self.station == "gnb"
         with dpg.group(horizontal=True):
+            self.build_heat_mode_switch()
             self.text(self.st["note"], "small", DIM)
             self.text("", "small", MUTED, tag="ch_status")
         body_h -= 34
@@ -236,6 +238,7 @@ class StationUI(RobotTabMixin, App):
         ticks = tuple((f"RX{r}-TX{c}", 3 - k + 0.5) for k, (r, c) in enumerate(LINKS))
         sub_act = f"  ·  {act['title']}"
         no_channel = gnb and key == "legacy"
+        mlo, mhi = ABS_DB if self.heat_mode == "absolute" else (0.0, 1.0)  # |H| colour scale
         with dpg.group(horizontal=True, horizontal_spacing=GAP):
             with self.box(half, r1):
                 if gnb:
@@ -246,7 +249,7 @@ class StationUI(RobotTabMixin, App):
                     self.note(r1 - 46, "Legacy feedback is a beam index (PMI): the gNB never sees the channel.",
                               "It looks the beam up in the 3GPP codebook (one beam for the whole band).")
                 else:
-                    self.heat("heat_now", 4, HEAT_COLS, half, r1 - 46, yticks=ticks)
+                    self.heat("heat_now", 4, HEAT_COLS, half, r1 - 46, yticks=ticks, lo=mlo, hi=mhi)
             with self.box(half, r1):
                 if gnb:
                     self.heading("BEAM THE gNB TRANSMITS  ·  ACROSS THE BAND", sub_act, tcol(act))
@@ -276,13 +279,13 @@ class StationUI(RobotTabMixin, App):
         with dpg.group(horizontal=True, horizontal_spacing=GAP):
             with self.box(half, r2):
                 if gnb:
-                    self.heading("RECONSTRUCTED BY THE gNB  ·  RECENT REPORTS", "  ·  RX0-TX0, newest on top, scaled per report")
+                    self.heading("RECONSTRUCTED BY THE gNB  ·  RECENT REPORTS", "  ·  RX0-TX0, newest on top" + self.heat_unit())
                 else:
-                    self.heading("MEASURED CHANNEL  ·  RECENT REPORTS", "  ·  RX0-TX0, newest on top, scaled per report")
+                    self.heading("MEASURED CHANNEL  ·  RECENT REPORTS", "  ·  RX0-TX0, newest on top" + self.heat_unit())
                 if no_channel:
                     self.note(r2 - 46, "No channel reconstruction in Legacy.")
                 else:
-                    self.heat("heat_hist", 1, HEAT_COLS, half, r2 - 46, "CSI report")
+                    self.heat("heat_hist", 1, HEAT_COLS, half, r2 - 46, "CSI report", lo=mlo, hi=mhi)
             with self.box(half, r2):
                 if gnb:
                     self.heading("TRANSMITTED BEAM  ·  RECENT REPORTS", "  ·  phase per 4-RB group, newest on top")
@@ -340,10 +343,13 @@ class StationUI(RobotTabMixin, App):
                           "   Start to see the channel.")
             return
         dpg.set_value("ch_status", f"   {v.n_reports} reports")
+        absolute = self.heat_mode == "absolute"
+        lo, hi = ABS_DB if absolute else (0.0, 1.0)
         if v.cfr is not None and dpg.does_item_exist("heat_now"):
             mag = np.abs(v.cfr)
-            scale = float(mag.max()) or 1.0
-            dpg.set_value("heat_now", [np.clip(cells(np.stack([mag[r, c] for r, c in LINKS]) / scale), 0, 1).ravel().tolist()])
+            c = cells(np.stack([mag[r, c] for r, c in LINKS]))
+            c = mag_db(c) if absolute else c / (float(mag.max()) or 1.0)
+            dpg.set_value("heat_now", [np.clip(c, lo, hi).ravel().tolist()])
         # phase is circular: unwrap across the band so a beam near +-180 deg does not jump from edge to edge,
         # then centre the axis on it (the heat maps use a cyclic colour map instead)
         beam = np.degrees(np.unwrap(np.radians(v.beam_deg)))
@@ -369,9 +375,13 @@ class StationUI(RobotTabMixin, App):
 
         if dpg.does_item_exist("heat_hist"):
             m = np.nan_to_num(v.hist_mag, nan=0.0)  # legacy rows at the gNB: no channel (dark)
-            scale = m.max(axis=1, keepdims=True)
-            scale[scale == 0] = 1.0
-            hist("heat_hist", np.clip(cells(m / scale), 0, 1), HEAT_COLS, 612)
+            if absolute:
+                hm = mag_db(cells(m))
+            else:
+                scale = m.max(axis=1, keepdims=True)
+                scale[scale == 0] = 1.0
+                hm = cells(m / scale)
+            hist("heat_hist", np.clip(hm, lo, hi), HEAT_COLS, 612)
         hist("heat_beam", np.clip(v.hist_beam, -180, 180), 13, N_PRB)
 
     def apply_clock(self, value: str):
@@ -430,6 +440,8 @@ class StationUI(RobotTabMixin, App):
                     self.src.request(self.state.pop("scenario"))
                 if "clock" in self.state:
                     self.apply_clock(self.state.pop("clock"))
+                if "heat_mode" in self.state:
+                    self.apply_heat_mode(self.state.pop("heat_mode"))
                 if hasattr(self.src, "robot"):
                     self.handle_robot_actions()
                 if self.state.pop("start", False):
