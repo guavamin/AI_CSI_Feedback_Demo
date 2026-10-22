@@ -47,6 +47,15 @@ METRICS = (  # name, sample attribute, time-plot y label, CDF x label, axis kind
 )
 CDF_PAD = {"rate": 0.5, "mcs": 0.5, "ratio": 0.005, "db": 0.5}
 RED = "#E5534B"
+# Channel heat maps, absolute mode: |H| in dB on one fixed scale. The UE's receive gain is fixed (--ue-rxgain 106,
+# no AGC) and its stored estimates track its RSRP 1:1 (corr 0.98, checked on the 10/13, 10/15 and outdoor
+# captures), so the level is a real signal level: distance, blocking or a removed antenna show. Every capture so
+# far lies inside (median power 57-68 dB, peaks up to 75 dB). Relative mode: each report scaled to its own maximum.
+ABS_DB = (38.0, 78.0)
+
+
+def mag_db(a):
+    return 20.0 * np.log10(np.maximum(a, 1e-3))
 
 
 def tcol(sc):
@@ -68,6 +77,7 @@ class App:
         self.cfg = load_config(args.profile)
         self.ota = not self.cfg.oai.rfsim
         self.clock = "internal"  # USRP clock reference (SYSTEM switch); applied to the launcher below
+        self.heat_mode = "absolute"  # channel heat maps: absolute (dB, fixed scale) | relative (per report)
         self.demo = DemoController(self.cfg)
         if self.demo.ctrl.launcher is not None and self.ota:
             self.demo.ctrl.launcher.clock_source = self.clock  # internal unless switched
@@ -322,6 +332,21 @@ class App:
                 dpg.configure_item(tag, enabled=not running)  # applied when the softmodems start
                 dpg.bind_item_theme(tag, self.res["t_clk_on" if value == self.clock else "t_clk_off"])
 
+    def build_heat_mode_switch(self):
+        """Channel tab: absolute |H| in dB on a fixed scale, or each report relative to its own maximum."""
+        for value, label in (("absolute", "Absolute (dB)"), ("relative", "Relative")):
+            b = dpg.add_button(label=label, user_data=value, callback=lambda s_, a_, u: self.state.update(heat_mode=u))
+            dpg.bind_item_font(b, self.res["small"])
+            dpg.bind_item_theme(b, self.res["t_clk_on" if value == self.heat_mode else "t_clk_off"])
+
+    def heat_unit(self) -> str:
+        return ", |H| in dB" if self.heat_mode == "absolute" else ", scaled per report"
+
+    def apply_heat_mode(self, value: str):
+        if value != self.heat_mode:
+            self.heat_mode = value
+            self._built_key = None  # rebuild: the colour scales change
+
     def apply_clock(self, value: str):
         self.clock = value
         if self.demo.ctrl.launcher is not None:
@@ -394,7 +419,9 @@ class App:
 
     def build_channel_tab(self, act, inner_w, body_h, GAP):
         key = act["key"]
-        self.text("Waiting for the UE's channel reports...", "small", DIM, tag="ch_status")
+        with dpg.group(horizontal=True):
+            self.build_heat_mode_switch()
+            self.text("Waiting for the UE's channel reports...", "small", DIM, tag="ch_status")
         body_h -= 34
         r1 = int(body_h * 0.27)
         r3 = int(body_h * 0.32)
@@ -413,6 +440,8 @@ class App:
                 self.text(title, "kicker", DIM)
                 self.text(sub, "kicker", sub_col)
 
+        lo, hi = ABS_DB if self.heat_mode == "absolute" else (0.0, 1.0)
+
         def heat(tag, rows, height, ylab="", yticks=None):
             cmap = dpg.mvPlotColormap_Viridis
             with dpg.group(horizontal=True):
@@ -420,7 +449,7 @@ class App:
                     dpg.bind_colormap(pl, cmap)
                     xa = dpg.add_plot_axis(dpg.mvXAxis, label=SUBC)
                     with dpg.plot_axis(dpg.mvYAxis, label=ylab) as ya:
-                        dpg.add_heat_series([0.0] * (rows * HEAT_COLS), rows, HEAT_COLS, scale_min=0.0, scale_max=1.0,
+                        dpg.add_heat_series([lo] * (rows * HEAT_COLS), rows, HEAT_COLS, scale_min=lo, scale_max=hi,
                                             bounds_min=(0, 0), bounds_max=(612, rows), format="", tag=tag)
                     dpg.set_axis_limits(xa, 0, 612)
                     dpg.set_axis_limits(ya, 0, rows)
@@ -428,7 +457,7 @@ class App:
                     if yticks:
                         dpg.set_axis_ticks(ya, yticks)
                 self.axis_font(pl)
-                dpg.add_colormap_scale(min_scale=0.0, max_scale=1.0, colormap=cmap, height=height, width=72, label="")
+                dpg.add_colormap_scale(min_scale=lo, max_scale=hi, colormap=cmap, height=height, width=72, label="")
 
         def legacy_note(height):
             dpg.add_spacer(height=max(0, height // 2 - 50))
@@ -446,7 +475,7 @@ class App:
         dpg.add_spacer(height=GAP - 10)
         with dpg.group(horizontal=True, horizontal_spacing=GAP):
             with box(r2):
-                heading("GROUND TRUTH  ·  RECENT REPORTS", "  ·  RX0-TX0, newest on top, scaled per report")
+                heading("GROUND TRUTH  ·  RECENT REPORTS", "  ·  RX0-TX0, newest on top" + self.heat_unit())
                 heat("heat_truth_hist", 1, r2 - 46, "CSI report")
             with box(r2):
                 heading("RECONSTRUCTED AT THE gNB  ·  RECENT REPORTS", sub_act, tcol(act))
@@ -459,12 +488,13 @@ class App:
                     dpg.add_plot_legend(location=dpg.mvPlot_Location_SouthEast)
                     xa = dpg.add_plot_axis(dpg.mvXAxis, label=SUBC)
                     dpg.set_axis_limits(xa, 0, 612)
-                    with dpg.plot_axis(dpg.mvYAxis, label="|H| (normalized)") as ya:
+                    with dpg.plot_axis(dpg.mvYAxis, label="|H| (dB)" if self.heat_mode == "absolute"
+                                       else "|H| (normalized)") as ya:
                         for (r, c), col in zip(LINKS, (BLUE, ORANGE, V1_LIGHT, GREEN)):
                             s = dpg.add_line_series([], [], label=f"RX{r}-TX{c}")
                             dpg.bind_item_theme(s, self.series_theme(dpg.mvLineSeries, col, 255, 2.0))
                             self.t[f"link_{r}{c}"] = s
-                    dpg.set_axis_limits(ya, 0.0, 1.05)
+                    dpg.set_axis_limits(ya, *((ABS_DB[0], ABS_DB[1] + 2) if self.heat_mode == "absolute" else (0.0, 1.05)))
                 self.axis_font(pl)
             with box(r3):
                 self.text("CHANNEL COSINE SIMILARITY", "kicker", DIM)
@@ -643,14 +673,17 @@ class App:
                                    f"that was on air")
         tm = np.abs(last.truth)
         scale = float(tm.max()) or 1.0
+        absolute = self.heat_mode == "absolute"
+        lo, hi = ABS_DB if absolute else (0.0, 1.0)
 
         def cells(a):  # [..., 612] -> [..., 153]: mean of 4 subcarriers per heat-map cell
             return a.reshape(*a.shape[:-1], HEAT_COLS, -1).mean(axis=-1)
 
         def links(a):  # row 0 is drawn at the top: RX0-TX0 first, matching the tick labels
-            return cells(np.stack([a[r, c] for r, c in LINKS]) / scale)
+            c = cells(np.stack([a[r, c] for r, c in LINKS]))
+            return mag_db(c) if absolute else c / scale  # absolute: the same scale for truth and reconstruction
 
-        dpg.set_value("heat_truth_now", [np.clip(links(tm), 0, 1).ravel().tolist()])
+        dpg.set_value("heat_truth_now", [np.clip(links(tm), lo, hi).ravel().tolist()])
         rows = rv.hist_truth.shape[0]
         row_scale = rv.hist_truth.max(axis=1, keepdims=True)
         row_scale[row_scale == 0] = 1.0
@@ -658,18 +691,19 @@ class App:
         def hist(tag, a):
             dpg.configure_item(tag, rows=rows, cols=HEAT_COLS, bounds_max=(612, rows))
             dpg.set_axis_limits(self.t[tag + "_y"], 0, rows)
-            dpg.set_value(tag, [np.clip(cells(a / row_scale)[::-1], 0, 1).ravel().tolist()])
+            v = mag_db(cells(a)) if absolute else cells(a / row_scale)
+            dpg.set_value(tag, [np.clip(v[::-1], lo, hi).ravel().tolist()])
 
         hist("heat_truth_hist", rv.hist_truth)
         if key != "legacy" and dpg.does_item_exist("heat_recon_now"):
             live = rv.last_live.get(key)  # latest report decoded while this scenario was on air
             now = links(np.abs(live.recon[key])) if live is not None else np.zeros((4, HEAT_COLS))
-            dpg.set_value("heat_recon_now", [np.clip(now, 0, 1).ravel().tolist()])
+            dpg.set_value("heat_recon_now", [np.clip(now, lo, hi).ravel().tolist()])
             on_air = np.array([k == key for k in rv.hist_keys])[:, None]  # other rows stay dark
             hist("heat_recon_hist", np.where(on_air, rv.hist_recon[key], 0.0))
         x = list(range(612))
         for r, c in LINKS:
-            dpg.set_value(self.t[f"link_{r}{c}"], [x, (tm[r, c] / scale).tolist()])
+            dpg.set_value(self.t[f"link_{r}{c}"], [x, (mag_db(tm[r, c]) if absolute else tm[r, c] / scale).tolist()])
         lo = 0.5
         for k in KEYS:
             v = rv.beam_cos.get(k)
@@ -726,6 +760,8 @@ class App:
                     self.demo.set_scenario(self.state.pop("scenario"))
                 if "clock" in self.state:
                     self.apply_clock(self.state.pop("clock"))
+                if "heat_mode" in self.state:
+                    self.apply_heat_mode(self.state.pop("heat_mode"))
                 if self.state.pop("start", False):
                     self.replay.clear()  # a new session: new channel history and cosine CDFs
                     self.session_dir = str(REPO / "data/runs/replay" / time.strftime("%Y%m%d_%H%M%S"))
@@ -787,6 +823,8 @@ class App:
             dpg.set_value("tabbar", "tab_channel" if action == "channel" else "tab_demo")
             self.state["tab_now"] = action
             self._built_key = None
+        elif action in ("absolute", "relative"):  # channel heat-map scale
+            self.state["heat_mode"] = action
         elif action.startswith("shot="):
             dpg.output_frame_buffer(file=action[5:])
         elif action == "quit":

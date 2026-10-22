@@ -60,7 +60,10 @@ class MockSource:
         self.ue = {s["key"]: list(csv.DictReader(open(MOCKUP_DATA / "runs" / s["run"] / "ue_reports.csv")))
                    for s in SCENARIOS}
         ch = dict(np.load(MOCKUP_DATA / "mockup_channels.npz"))
-        self.cfr = {"truth": ch["true_cfr"], "same": ch["same_cfr"], "cross": ch["cross_cfr"]}
+        # stored in the training cache's units (raw UE estimate / 4376, PACKED_UNIT of build_capture_cache.py):
+        # back to the raw level, so the absolute (dB) heat maps look like the live ones (median ~64 dB)
+        unit = 4376.0
+        self.cfr = {"truth": ch["true_cfr"] * unit, "same": ch["same_cfr"] * unit, "cross": ch["cross_cfr"] * unit}
         self.beams = {k: beam_phase_deg(np.stack([dominant_beams(c) for c in v])) for k, v in self.cfr.items()}
         self.pmi_deg = beam_phase_deg(np.stack([codebook_beam(i) for i in _pmi(self.cfr["truth"])]))
         self.running_ = False
