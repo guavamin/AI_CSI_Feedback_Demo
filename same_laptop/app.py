@@ -54,6 +54,14 @@ RED = "#E5534B"
 ABS_DB = (38.0, 78.0)
 
 
+def scenario_values(view, key: str, attr: str) -> np.ndarray:
+    """attr of every sample of the session taken while scenario key was on air (CDFs, averages). view.samples only
+    covers the last hour (time plots), so a long run in one scenario would push the others out of it."""
+    pool = getattr(view, "by_scenario", None)
+    samples = pool.get(key, []) if pool else [s for s in view.samples if s.scenario == key]
+    return np.array([getattr(s, attr) for s in samples], dtype=float)
+
+
 def mag_db(a):
     return 20.0 * np.log10(np.maximum(a, 1e-3))
 
@@ -616,7 +624,7 @@ class App:
             # CDFs over the whole session, per scenario; the x axis spans the data
             lo, hi = np.inf, -np.inf
             for key in KEYS:
-                v = np.sort(np.array([getattr(s, attr) for s in view.samples if s.scenario == key], dtype=float))
+                v = np.sort(scenario_values(view, key, attr))
                 v = v[np.isfinite(v)]
                 if v.size:
                     lo, hi = min(lo, float(v[0])), max(hi, float(v[-1]))
@@ -639,7 +647,7 @@ class App:
             return
         means = {}
         for key in KEYS:
-            v = np.array([getattr(s, attr) for s in view.samples if s.scenario == key], dtype=float)
+            v = scenario_values(view, key, attr)
             v = v[np.isfinite(v)]
             means[key] = float(v.mean()) if v.size else None
         top = max([m for m in means.values() if m is not None] + [0.0])

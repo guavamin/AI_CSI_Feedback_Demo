@@ -409,7 +409,7 @@ class UeSource:
 
     def plot_view(self):
         v = self._view()
-        return SimpleNamespace(samples=v.samples, session_t0=v.session_t0)
+        return SimpleNamespace(samples=v.samples, session_t0=v.session_t0, by_scenario=v.by_scenario)
 
     def channel(self):
         return self.ue.channel.view()
