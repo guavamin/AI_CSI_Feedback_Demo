@@ -76,6 +76,7 @@ class UeView:
     session_t0: float | None = None
     popup: dict = field(default_factory=dict)  # the latest scenario notice from the gNB station
     rx_silent_s: float = 0.0  # receiver listening, but no downlink data for this long (0: data arriving / n.a.)
+    by_scenario: dict = field(default_factory=dict)  # every sample of the session per scenario (CDFs, averages)
 
 
 class UeStation:
@@ -110,6 +111,7 @@ class UeStation:
         self._popup: dict = {}
         self._timeline: list[tuple[float, str | None]] = [(0.0, None)]
         self._samples: deque[UeSample] = deque(maxlen=3600)
+        self._by_scenario: dict[str, list[UeSample]] = {}
         self._session_t0: float | None = None
         self._events: deque[Event] = deque(maxlen=300)
         self._t0 = time.monotonic()
@@ -150,6 +152,7 @@ class UeStation:
                 return
             self._desired = True
             self._samples.clear()
+            self._by_scenario = {}
             self._session_t0 = None
             self._started_at, self._last_exit = 0.0, 0.0  # a new session: no "UE exited" for the last one
             self._server_since, self._rx_last = 0.0, 0.0
@@ -324,7 +327,9 @@ class UeStation:
             with self._lock:
                 if self._session_t0 is None:
                     self._session_t0 = now - self._t0
-                self._samples.append(UeSample(now - self._t0, scen, st.tput_mbps, st.fail_rate, st.sinr_db, st.rsrp_dbm))
+                sample = UeSample(now - self._t0, scen, st.tput_mbps, st.fail_rate, st.sinr_db, st.rsrp_dbm)
+                self._samples.append(sample)  # last hour: time plots
+                self._by_scenario.setdefault(scen, []).append(sample)  # whole session: CDFs, averages
 
     def _rx_silent_s(self, server_running: bool) -> float:
         if not server_running or not self._server_since:
@@ -366,7 +371,8 @@ class UeStation:
                           ue_ip=s["ue_ip"], server_running=s["server_running"], link_up=link_up, peer=self.server.peer,
                           rx_silent_s=self._rx_silent_s(s["server_running"]),
                           scenario=self._scenario, steps=self.steps(s, link_up), samples=list(self._samples),
-                          events=list(self._events), session_t0=self._session_t0, popup=dict(self._popup))
+                          events=list(self._events), session_t0=self._session_t0, popup=dict(self._popup),
+                          by_scenario={k: list(v) for k, v in self._by_scenario.items()})
 
 
 def _title(key: str) -> str:

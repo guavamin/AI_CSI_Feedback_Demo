@@ -71,6 +71,8 @@ class DemoView:
     csi_record_root: str
     last: Sample | None = None
     session_t0: float | None = None  # Sample.t of the session's first sample: time 0 of the plots
+    # every sample of the session per scenario (CDFs, averages); samples above holds only the last hour (time plots)
+    by_scenario: dict = field(default_factory=dict)
     decoder: int = -1
     aifb: dict[str, str] = field(default_factory=dict)
 
@@ -111,6 +113,7 @@ class DemoController:
         self._switch_lock = threading.Lock()
         self._switching = False
         self._samples: deque[Sample] = deque(maxlen=3600)
+        self._by_scenario: dict[str, list[Sample]] = {k: [] for k in SCENARIO_KEYS}
         self._session_t0: float | None = None
         self._events: deque[Event] = deque(maxlen=300)
         self._stats = MacStatsIngest(Path(cfg.oai.build_dir).expanduser() / cfg.oai.stats_log)
@@ -138,6 +141,7 @@ class DemoController:
     def start_system(self) -> None:
         with self._lock:
             self._samples.clear()  # a new session: plots and CDFs start empty
+            self._by_scenario = {k: [] for k in SCENARIO_KEYS}
             self._session_t0 = None
         self._mark(self.scenario)  # the modems boot in this scenario (decoder 0)
         self.event("busy", "Starting gNB, UE and traffic")
@@ -313,10 +317,16 @@ class DemoController:
             with self._lock:
                 if self._session_t0 is None:
                     self._session_t0 = time.monotonic() - self._t0
-                self._samples.append(Sample(
+                self._add_sample(Sample(
                     t=time.monotonic() - self._t0, scenario=scen, tput_mbps=s.throughput_mbps, bler=s.bler,
                     mcs=st.dl_mcs if st else float("nan"), cqi=float(s.cqi),
                     ul_snr_db=st.ul_snr_db if st else float("nan"), rsrp_dbm=st.rsrp_dbm if st else float("nan")))
+
+    def _add_sample(self, sample: Sample) -> None:
+        """Lock held. The last hour for the time plots; the whole session per scenario for CDFs and averages
+        (a long session in one scenario must not push another scenario's samples out: 1 sample/s, ~9 MB / 10 h)."""
+        self._samples.append(sample)
+        self._by_scenario.setdefault(sample.scenario, []).append(sample)
 
     def state_key(self) -> tuple[str, str, bool]:
         """Cheap (scenario, target, switching) for a render loop; view() copies everything."""
@@ -331,7 +341,8 @@ class DemoController:
                             switching=self._switching, steps=bringup_steps(radio), samples=samples,
                             events=list(self._events), csi_record_root=str(self.ctrl.csirs_record_root or ""),
                             last=samples[-1] if samples else None, decoder=self.decoder, aifb=dict(self._aifb),
-                            session_t0=self._session_t0)
+                            session_t0=self._session_t0,
+                            by_scenario={k: list(v) for k, v in self._by_scenario.items()})
 
 
 def _title(key: str) -> str:
