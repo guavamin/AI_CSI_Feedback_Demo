@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# Raw CSI data collection with the gNB and the UE on separate laptops (legacy CSI, rank 1, CSI-RS every 80 ms):
+# Raw CSI data collection with the gNB and the UE on separate laptops or on one (legacy CSI, rank 1, CSI-RS every 80 ms):
 # the same settings as the 10/13 and 10/15 captures (identical config files), with the GUI's OAI build.
 #
 #   gNB laptop (root):  bash collect.sh gnb <session> <run>
 #   UE laptop  (root):  bash collect.sh ue  <session> <run>
+#   one laptop: both, in two root terminals, gNB first (it takes its B210 by serial, the UE gets the other)
 #
 #   <session>  e.g. outdoor_dynamic        <run>  capture (one run: the training recipe keeps its last block as the test set)
 #   data:      ~/Desktop/InterDigital_Project/ota_sessions/<session>/<run>/   (the same path on both laptops)
@@ -29,9 +30,9 @@ DIR=$BASE/ota_sessions/$SESSION/$RUN
 [[ $EUID -eq 0 ]] || { echo "run this from a root shell"; exit 1; }
 [[ $ROLE == gnb || $ROLE == ue ]] || { echo "role must be gnb or ue"; exit 1; }
 [[ $CLOCK == external || $CLOCK == internal ]] || { echo "CLOCK must be external or internal"; exit 1; }
-for name in nr-softmodem nr-uesoftmodem; do
-    if pgrep -x "$name" >/dev/null; then echo "$name is already running: close the demo GUI / stop it first"; exit 1; fi
-done
+# only this role's softmodem: on one laptop the other role runs next to it
+NAME=$([[ $ROLE == gnb ]] && echo nr-softmodem || echo nr-uesoftmodem)
+if pgrep -x "$NAME" >/dev/null; then echo "$NAME is already running: close the demo GUI / stop it first"; exit 1; fi
 
 mkdir -p "$DIR/csi/$ROLE" "$DIR/config_snapshot"
 chown "$OWNER:" "$BASE/ota_sessions"  # created here as root: the user must be able to add sessions (unzip, mkdir)
